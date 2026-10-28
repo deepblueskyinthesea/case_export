@@ -86,6 +86,11 @@
 uv あり。Python 3.10 は uv が用意する）で pull して `build.bat <スクリプト名>` を実行する。
 コンテナでは Windows 用の exe を作れない。
 
+nuitka の exe で pywinauto を使うスクリプトは、pywinauto を読み込む前に
+`if "__compiled__" in globals(): sys.frozen = True` とする。しないと comtypes が補助ファイル
+（ビルド PC で作った `comtypes.gen`）の型ライブラリの更新日時を実行 PC と比べ、
+`ImportError: Typelib different than module` で止まる。
+
 ---
 
 ## Python 環境

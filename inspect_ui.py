@@ -533,6 +533,10 @@ def main(argv=None):
         print("このツールは Windows 専用です。")
         return 1
 
+    # nuitka の exe では、ビルド PC で作った comtypes の補助ファイルを
+    # 型ライブラリの更新日時が違ってもそのまま使わせる（PyInstaller の exe と同じ扱い）
+    if "__compiled__" in globals():
+        sys.frozen = True
     import pywinauto  # noqa: F401 - 先に読み込んで DPI の扱いをそろえる
     import win32gui
 
