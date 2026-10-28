@@ -64,7 +64,9 @@
 | 場所 | 中身 |
 |---|---|
 | `main.py` | エントリポイント（現状は `uv init` の雛形のみ）。 |
-| `pyproject.toml` | uv プロジェクト定義。依存はまだない。 |
+| `inspect_ui.py` | 実機用の画面調査ツール（第 1 段階）。前面の画面の部品構成と Excel の状態を、患者情報を伏せたレポートに書き出す。読み取りのみ。 |
+| `tests/` | Windows なしで確かめられる部分のテスト（`python -m unittest discover -s tests`）。 |
+| `pyproject.toml` | uv プロジェクト定義。依存は pywin32・pywinauto（Windows のみ）。 |
 
 構成が固まったらこの表を更新する。
 
