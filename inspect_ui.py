@@ -26,6 +26,7 @@ import platform
 import re
 import sys
 import time
+import traceback
 from pathlib import Path
 
 # 名前をそのまま出してよい UI 部品（ボタン名・メニュー名・列見出しなど）
@@ -560,4 +561,11 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # exe をダブルクリックで起動したとき、結果を読む前にウィンドウが閉じないようにする
+    try:
+        exit_code = main()
+    except Exception:  # noqa: BLE001
+        traceback.print_exc()
+        exit_code = 1
+    input("Enter キーで閉じます。")
+    sys.exit(exit_code)

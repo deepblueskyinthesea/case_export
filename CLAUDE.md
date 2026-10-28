@@ -65,6 +65,7 @@
 |---|---|
 | `main.py` | エントリポイント（現状は `uv init` の雛形のみ）。 |
 | `inspect_ui.py` | 実機用の画面調査ツール（第 1 段階）。前面の画面の部品構成と Excel の状態を、患者情報を伏せたレポートに書き出す。読み取りのみ。 |
+| `build.bat` | Windows 用のビルドスクリプト（`build.bat <スクリプト名>`）。nuitka の standalone で `dist\<名前>.dist` と zip を作る。 |
 | `tests/` | Windows なしで確かめられる部分のテスト（`python -m unittest discover -s tests`）。 |
 | `pyproject.toml` | uv プロジェクト定義。依存は pywin32・pywinauto（Windows のみ）。 |
 
@@ -79,6 +80,11 @@
 開発コンテナ（Linux）では電子カルテも Excel も操作できない。
 電子カルテ・Excel の画面操作にかかわる部分は実機でしか確かめられないので、
 コンテナで確認できた範囲と実機確認が必要な範囲を分けて報告する。
+
+院内端末には exe（standalone のフォルダ）しか持ち込めない。onefile はウイルス対策ソフトに
+引っかかるので使わない。ビルドはユーザーのデスクトップ PC（Windows、ネット接続あり、
+python.org 版 Python 3.10）で pull して `build.bat <スクリプト名>` を実行する。
+コンテナでは Windows 用の exe を作れない。
 
 ---
 
