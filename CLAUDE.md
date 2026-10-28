@@ -65,7 +65,7 @@
 |---|---|
 | `main.py` | エントリポイント（現状は `uv init` の雛形のみ）。 |
 | `inspect_ui.py` | 実機用の画面調査ツール（第 1 段階）。前面の画面の部品構成と Excel の状態を、患者情報を伏せたレポートに書き出す。読み取りのみ。 |
-| `build.bat` | Windows 用のビルドスクリプト（`build.bat <スクリプト名>`）。nuitka の standalone で `dist\<名前>.dist` と zip を作る。 |
+| `build.bat` | Windows 用のビルドスクリプト（`build.bat <スクリプト名>`）。nuitka の standalone で `dist\<名前>.dist` を作る。 |
 | `tests/` | Windows なしで確かめられる部分のテスト（`python -m unittest discover -s tests`）。 |
 | `pyproject.toml` | uv プロジェクト定義。依存は pywin32・pywinauto（Windows のみ）。 |
 
