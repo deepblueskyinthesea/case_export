@@ -2,10 +2,10 @@
 setlocal
 rem Build a standalone exe folder with Nuitka.
 rem Run on a Windows PC with internet access and uv (uv downloads Python 3.10 if needed).
-rem Usage: build.bat [script name without .py]   (default: inspect_ui, so double-click works)
+rem Usage: build.bat [script name without .py]   (default: main, so double-click works)
 cd /d "%~dp0"
 set "SCRIPT=%~1"
-if "%SCRIPT%"=="" set "SCRIPT=inspect_ui"
+if "%SCRIPT%"=="" set "SCRIPT=main"
 if not exist "%SCRIPT%.py" (
   echo %SCRIPT%.py not found.
   goto :error

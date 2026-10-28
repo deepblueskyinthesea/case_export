@@ -65,7 +65,7 @@
 |---|---|
 | `main.py` | 本体（第 2 段階・半自動）。手術依頼箋の Excel が開くのを見張り、書き込み完了を待って `症例ファイル\NNN.xls` に SaveCopyAs してブックを閉じる。起動時に前回の `NNN.xls` を削除する。 |
 | `inspect_ui.py` | 実機用の画面調査ツール（第 1 段階）。前面の画面の部品構成と Excel の状態を、患者情報を伏せたレポートに書き出す。読み取りのみ。 |
-| `build.bat` | Windows 用のビルドスクリプト（`build.bat <スクリプト名>`）。nuitka の standalone で `dist\<名前>.dist` を作る。 |
+| `build.bat` | Windows 用のビルドスクリプト（`build.bat <スクリプト名>`。省略するとダブルクリックでも `main` をビルドする）。nuitka の standalone で `dist\<名前>.dist` を作る。 |
 | `tests/` | Windows なしで確かめられる部分のテスト（`python -m unittest discover -s tests`）。 |
 | `pyproject.toml` | uv プロジェクト定義。依存は pywin32・pywinauto（Windows のみ）。 |
 
