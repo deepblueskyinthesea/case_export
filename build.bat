@@ -2,17 +2,15 @@
 setlocal
 rem Build a standalone exe folder with Nuitka.
 rem Run on a Windows PC with internet access and python.org Python 3.10 (not the Store version).
-rem Usage: build.bat inspect_ui
+rem Usage: build.bat [script name without .py]   (default: inspect_ui, so double-click works)
 cd /d "%~dp0"
-if "%~1"=="" (
-  echo Usage: build.bat ^<script name without .py^>
-  exit /b 1
-)
 set "SCRIPT=%~1"
+if "%SCRIPT%"=="" set "SCRIPT=inspect_ui"
 if not exist "%SCRIPT%.py" (
   echo %SCRIPT%.py not found.
-  exit /b 1
+  goto :error
 )
+echo Building %SCRIPT%.py
 set "VENV=.venv-build"
 set "PY=%VENV%\Scripts\python.exe"
 
@@ -39,9 +37,11 @@ powershell -NoProfile -Command "Compress-Archive -Path 'dist\%SCRIPT%.dist' -Des
 echo.
 echo Done: dist\%SCRIPT%.dist\%SCRIPT%.exe
 echo       dist\%SCRIPT%.zip  (copy this folder or zip to the target PC)
+pause
 exit /b 0
 
 :error
 echo.
 echo Build failed.
+pause
 exit /b 1
