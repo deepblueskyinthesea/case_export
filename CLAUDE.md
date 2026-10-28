@@ -1,6 +1,17 @@
 # CLAUDE.md
 
-麻酔記録システム **AIMS-ν（AIMS-nu）** の開発リポジトリ。
+**case-export**：電子カルテの「主術予定表発行」から患者ごとの Excel を
+`デスクトップ\症例ファイル\<患者名>` に保存する作業を自動化するツールの開発リポジトリ。
+保存した Excel は麻酔記録システム AIMS-ν の患者情報タブ「Excel ファイルから読み込む」で使う。
+
+現在の手作業（自動化の対象）：
+1. 電子カルテの「主術依頼箋出力」ボタンを押す
+2. 主術予定表発行ダイアログの患者一覧で、目的の患者を右クリック →「発行プレビュー」
+3. その患者の Excel ファイルが Excel で開く
+4. ファイル → 名前を付けて保存 → デスクトップ\症例ファイル に患者名で保存
+5. これをその週の全患者分繰り返す
+
+自動化の方式（画面操作か別の方法か）は未定。
 
 ---
 
@@ -52,27 +63,34 @@
 
 | 場所 | 中身 |
 |---|---|
-| `AIMS_nu/` | アプリのサブプロジェクト。**作業の大半はここ。この配下を触る前に [AIMS_nu/CLAUDE.md](AIMS_nu/CLAUDE.md) の地雷領域を読むこと。** |
-| `AIMS_nu/AIMS_nu/` | アプリ本体のソース。`build.bat` 等の配布用スクリプトもここ。 |
-| `scripts/` | コンテナ再作成時の環境復旧スクリプト。`/workspace` 直下のシンボリックリンクから呼ばれる。 |
-| `AIファイル/` | 素材。 |
+| `main.py` | エントリポイント（現状は `uv init` の雛形のみ）。 |
+| `pyproject.toml` | uv プロジェクト定義。依存はまだない。 |
+
+構成が固まったらこの表を更新する。
+
+---
+
+## 実行環境
+
+本番は電子カルテと Excel が入った院内の Windows 端末。
+
+開発コンテナ（Linux）では電子カルテも Excel も操作できない。
+電子カルテ・Excel の画面操作にかかわる部分は実機でしか確かめられないので、
+コンテナで確認できた範囲と実機確認が必要な範囲を分けて報告する。
 
 ---
 
 ## Python 環境
 
-仮想環境は **`AIMS_nu/.venv`（Python 3.10、PySide6 6.11.1）の1つだけ**。検証はこれで行う。
+リポジトリルートが uv プロジェクト（Python 3.10 以上、`.python-version` は 3.10）。
+`.venv` はまだ作っていない。
 
-リポジトリルートは uv プロジェクトではないので、ルートで `uv sync` を打たないこと。
-かつてルートにも Python 3.12 の venv があったが、中身が AIMS_nu 側の真部分集合で
-取り違えの元にしかならなかったため削除した。
-
-**`uv run` を使わない。** ユーザーの環境では `uv run` が venv を `uv.lock` へ強制同期してしまう。
+**`uv run` を使わない。** `uv run` は実行前に venv を `uv.lock` へ強制同期してしまう
+（worktree 間で venv を共有すると、ほかの worktree の venv まで書き換わる）。
 インタプリタを直接呼ぶこと。
 
 ```
-AIMS_nu/.venv/bin/python <script>
-QT_QPA_PLATFORM=offscreen AIMS_nu/.venv/bin/python <script>   # GUI なしの検証
+.venv/bin/python <script>
 ```
 
 ---
@@ -85,9 +103,9 @@ QT_QPA_PLATFORM=offscreen AIMS_nu/.venv/bin/python <script>   # GUI なしの検
   ユーザーに報告して指示を待つ。
 - worktree での作業が終わったら、次の順で master へ取り込んでプッシュする。
   1. 作業ブランチにコミットする
-  2. `git -C /workspace/python_dev_uv pull --ff-only` でメインのチェックアウトの master を最新にする
+  2. `git -C /workspace/case_export pull --ff-only` でメインのチェックアウトの master を最新にする
   3. `git rebase master` で master の上に付け直す（他の作業が入っていたら検証をやり直す）
-  4. `git -C /workspace/python_dev_uv merge --ff-only <作業ブランチ>` で取り込み、`git -C /workspace/python_dev_uv push` する
+  4. `git -C /workspace/case_export merge --ff-only <作業ブランチ>` で取り込み、`git -C /workspace/case_export push` する
   5. 早送りできなければ（先に別の作業が入った）2 からやり直す
 
   付け直しで衝突したら、単純なものだけ直し、判断が要るものは止めて報告する。force push はしない。
@@ -99,12 +117,8 @@ QT_QPA_PLATFORM=offscreen AIMS_nu/.venv/bin/python <script>   # GUI なしの検
   最新の master の上に付け直す（ほかの並列作業が先に取り込まれていても古いコードで作業しないため）。
   未コミットの変更があるときは付け直さず、「master より○件遅れています」とだけ伝える。
   付け直しで衝突したら、止めて報告する。
-- worktree の `AIMS_nu/.venv` はメインの venv へのシンボリックリンク（Orca のセットアップスクリプトで作る）。
-  全 worktree で共有なので、worktree で `uv add` などの venv 変更をしない。
-- 改行は `.gitattributes` でリポジトリ内 LF に統一済み（2026-10-08、`.bat`/`.cmd` は CRLF）。
-  例外は共有マスタ（`product_registry_shared/*.json`）とコスト表（`cost/*.json`）で、
-  アプリが中身のバイト列をハッシュして判定するため CRLF のまま固定している。
-  この 2 か所を Python で書き換えるときだけバイナリモード（`rb`/`wb`）で CRLF を保つ。
+- worktree での venv の扱い（メインの `.venv` へのシンボリックリンクで共有するか）は未定。
+  共有する場合は、worktree で `uv add` などの venv 変更をしない。
 - マージ済みで不要になったフィーチャーブランチは、削除（ローカルとリモート）を提案する。
   古いブランチに誤ってコミットするのを防ぐため。
 
@@ -114,6 +128,9 @@ QT_QPA_PLATFORM=offscreen AIMS_nu/.venv/bin/python <script>   # GUI なしの検
 - Never request or output secrets, API keys, or credentials.
 - Do not log or print personal data.
 - Assume production-like constraints even in development.
+- 実際の患者の Excel ファイルや電子カルテの画面キャプチャをリポジトリに入れない。
+- テストにはダミーの患者データを使う。
+- 患者名をログ・コメント・ファイル名の例に出さない。
 
 ---
 
