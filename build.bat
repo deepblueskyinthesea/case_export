@@ -37,7 +37,7 @@ echo [3/4] Generating UI Automation wrappers ...
 echo [4/4] Building with Nuitka (the first run may take 10+ minutes) ...
 rem Nuitka may fail with "getWindowsShortPathName" if the work folder does not exist yet.
 if not exist "dist\%SCRIPT%.build" mkdir "dist\%SCRIPT%.build"
-"%PY%" -m nuitka --standalone --windows-console-mode=force --assume-yes-for-downloads --remove-output --output-dir=dist --include-package=comtypes.gen --include-package=pywinauto "%SCRIPT%.py" || goto :error
+"%PY%" -m nuitka --standalone --windows-console-mode=force --assume-yes-for-downloads --remove-output --output-dir=dist --include-package=comtypes --include-package=pywinauto "%SCRIPT%.py" || goto :error
 
 echo.
 echo Done: dist\%SCRIPT%.dist\%SCRIPT%.exe
