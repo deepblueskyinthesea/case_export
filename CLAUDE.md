@@ -83,7 +83,7 @@
 
 院内端末には exe（standalone のフォルダ）しか持ち込めない。onefile はウイルス対策ソフトに
 引っかかるので使わない。ビルドはユーザーのデスクトップ PC（Windows、ネット接続あり、
-python.org 版 Python 3.10）で pull して `build.bat <スクリプト名>` を実行する。
+uv あり。Python 3.10 は uv が用意する）で pull して `build.bat <スクリプト名>` を実行する。
 コンテナでは Windows 用の exe を作れない。
 
 ---
