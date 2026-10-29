@@ -17,9 +17,9 @@ import hashlib
 import json
 import re
 import sys
-import threading
 import time
 import traceback
+import warnings
 from pathlib import Path
 
 TEMPLATE_PATH = r"C:\SSI\Excel\手術\手術依頼箋.xls"
@@ -43,6 +43,7 @@ SETTINGS_KEYS = ("dpi", "x", "y", "row_height")
 MIN_ROW_HEIGHT = 5   # これより低い行は測り間違いとみなす
 ROW_MARGIN = 3       # 一覧の下端からこれより近い位置は右クリックしない
 MAX_ROWS = 30        # 念のための上限（一覧は最大 12 人くらい）
+BUTTON_TIMEOUT = 60  # 「手術依頼箋出力」のある画面が開くのを待つ秒数
 DIALOG_TIMEOUT = 30  # ボタンを押してからダイアログが出るまで待つ秒数
 DIALOG_SETTLE = 2    # ダイアログが出てから一覧が埋まるまで待つ秒数
 MENU_TIMEOUT = 5     # 右クリックしてからメニューが出るまで待つ秒数
@@ -383,28 +384,29 @@ def find_grid(dialog):
     return found[0] if len(found) == 1 else None
 
 
-def press_emr_button(errors):
-    """電子カルテの「手術依頼箋出力」ボタンを押す。
+def find_emr_button():
+    """電子カルテの「手術依頼箋出力」ボタン。同じ名前の部品が裏にもあるので、画面に出ていて押せるものを選ぶ。"""
+    from pywinauto import Desktop
 
-    押した処理が終わるまで戻ってこないことがあるので、別スレッドで押してダイアログが出るのを待つ。
-    """
-    def run():
-        import comtypes
-
-        comtypes.CoInitialize()
+    for window in Desktop(backend="uia").windows(auto_id=EMR_MAIN_ID, framework_id="WinForm"):
         try:
-            from pywinauto import Desktop
+            for button in window.descendants(title=BUTTON_NAME, control_type="Button"):
+                if button.is_visible() and button.is_enabled():
+                    return button
+        except Exception:  # noqa: BLE001 - 探している間に画面が切り替わった
+            continue
+    return None
 
-            main_window = Desktop(backend="uia").window(auto_id=EMR_MAIN_ID, framework_id="WinForm")
-            button = main_window.child_window(title=BUTTON_NAME, control_type="Button")
-            button.wait("exists enabled", timeout=10)
-            button.invoke()
-        except Exception as e:  # noqa: BLE001
-            errors.append(e)
-        finally:
-            comtypes.CoUninitialize()
 
-    threading.Thread(target=run, daemon=True).start()
+def wait_dialog(timeout):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        dialog = find_dialog()
+        if dialog:
+            time.sleep(DIALOG_SETTLE)
+            return dialog
+        time.sleep(POLL_SECONDS)
+    return None
 
 
 def open_dialog():
@@ -412,23 +414,28 @@ def open_dialog():
     if dialog:
         print("手術予定表発行ダイアログが開いているので、そのまま使います。")
         return dialog
-    print("「手術依頼箋出力」を押しています…")
-    errors = []
-    press_emr_button(errors)
-    end = time.monotonic() + DIALOG_TIMEOUT
-    while time.monotonic() < end:
-        dialog = find_dialog()
-        if dialog:
-            time.sleep(DIALOG_SETTLE)
-            return dialog
-        if errors:  # ボタンを押せなかった（押せたなら、ダイアログが出るまで待つ）
-            break
-        time.sleep(POLL_SECONDS)
-    if errors:
-        print(f"※ 「手術依頼箋出力」を押せませんでした（{type(errors[0]).__name__}）。")
-    else:
+    button = find_emr_button()
+    if button is None:
+        print(f"「{BUTTON_NAME}」のある画面を開いてください（{BUTTON_TIMEOUT} 秒待ちます）…")
+        end = time.monotonic() + BUTTON_TIMEOUT
+        while button is None and time.monotonic() < end:
+            time.sleep(1)
+            if find_dialog():  # 手でボタンを押してダイアログを開いた
+                return wait_dialog(DIALOG_TIMEOUT)
+            button = find_emr_button()
+        if button is None:
+            print(f"※ 「{BUTTON_NAME}」ボタンが見つかりませんでした。")
+            return None
+    print(f"「{BUTTON_NAME}」を押しています…")
+    try:
+        button.invoke()
+    except Exception as e:  # noqa: BLE001
+        print(f"※ 「{BUTTON_NAME}」を押せませんでした（{type(e).__name__}）。")
+        return None
+    dialog = wait_dialog(DIALOG_TIMEOUT)
+    if dialog is None:
         print("※ 手術予定表発行ダイアログが出ませんでした。")
-    return None
+    return dialog
 
 
 def cursor_pos():
@@ -624,6 +631,13 @@ def main():
     if "__compiled__" in globals():
         sys.frozen = True
     set_dpi_aware()
+    # COM はこのスレッドで最初に初期化する（pythoncom は最初に読み込んだスレッドでだけ初期化する）。
+    # 方式は第 2 段階で Excel につながっていた STA に合わせる。
+    sys.coinit_flags = 2  # COINIT_APARTMENTTHREADED
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # pywinauto が coinit_flags について出す警告
+        import pythoncom  # noqa: F401
+        import pywinauto  # noqa: F401
 
     folder = desktop_dir() / OUTPUT_FOLDER_NAME
     print(f"保存先: {folder}")
