@@ -3,7 +3,7 @@
 使い方（院内の Windows 端末で）:
   1. main.exe を起動する（前回の NNN.xls を消してよいか聞かれるので Enter）
   2. 電子カルテで患者を順に右クリック →「発行プレビュー」する
-  3. Excel が開くと自動で保存してブックを閉じるので、次の患者に進む
+  3. Excel が開くと自動で保存して Excel を閉じるので、次の患者に進む
   4. 終わったら Ctrl+C かウィンドウを閉じる
 
 画面には保存したファイル名と件数だけを出し、患者名は出さない。
@@ -209,7 +209,17 @@ class Watcher:
             print("  ※ ブックを閉じられませんでした。手で閉じてください。")
             self.done(hwnd, skip=True)
             return
+        self.quit_if_empty(hwnd, p.app)
         self.done(hwnd)
+
+    def quit_if_empty(self, hwnd, app):
+        """ブックが残っていなければ Excel ごと終了する（手で × を押すのと同じ）。"""
+        self.apps.pop(hwnd, None)  # 接続を持ったままだと終了を止めてしまうので手放す
+        try:
+            if call(lambda: app.Workbooks.Count) == 0:
+                call(lambda: app.Quit())
+        except Exception:  # noqa: BLE001
+            print("  ※ Excel を終了できませんでした。手で閉じてください。")
 
 
 def watch(folder):

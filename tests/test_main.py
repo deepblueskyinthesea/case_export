@@ -80,8 +80,20 @@ class FakeWorkbook:
         self.closed = True
 
 
+class FakeWorkbooks:
+    def __init__(self, count):
+        self.Count = count
+
+
 class FakeApp:
     Ready = True
+
+    def __init__(self, other_books=0):
+        self.Workbooks = FakeWorkbooks(other_books)  # 閉じたあとに残るブックの数
+        self.quit = False
+
+    def Quit(self):
+        self.quit = True
 
 
 class WatcherCheckTest(unittest.TestCase):
@@ -107,6 +119,25 @@ class WatcherCheckTest(unittest.TestCase):
             self.assertNotIn(1, w.skipped)
             self.assertIn("001.xls を保存しました", out)
             self.assertNotIn("ダミー", out)
+
+    def test_quits_excel_when_no_books_left(self):
+        with tempfile.TemporaryDirectory() as d:
+            w = main.Watcher(Path(d))
+            app = FakeApp()
+            w.apps[1] = app
+            p = w.pending[1] = main.Pending(app, FakeWorkbook((("ダミー", 1),)))
+            self.run_checks(w, 1, p, main.STABLE_COUNT)
+            self.assertTrue(app.quit)
+            self.assertNotIn(1, w.apps)
+
+    def test_keeps_excel_with_other_books(self):
+        with tempfile.TemporaryDirectory() as d:
+            w = main.Watcher(Path(d))
+            app = FakeApp(other_books=1)
+            p = w.pending[1] = main.Pending(app, FakeWorkbook((("ダミー", 1),)))
+            self.run_checks(w, 1, p, main.STABLE_COUNT)
+            self.assertTrue((Path(d) / "001.xls").exists())
+            self.assertFalse(app.quit)
 
     def test_waits_while_values_change(self):
         with tempfile.TemporaryDirectory() as d:
