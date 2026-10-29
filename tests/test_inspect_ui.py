@@ -10,9 +10,9 @@ class MaskTest(unittest.TestCase):
         self.assertEqual(iu.mask("ダミー患者"), "<伏せ字 5文字>")
 
     def test_shows_keyword_hint_only(self):
-        result = iu.mask("主術予定表発行 - ダミー患者")
+        result = iu.mask("手術予定表発行 - ダミー患者")
         self.assertNotIn("ダミー", result)
-        self.assertIn("含む:主術,予定表,発行", result)
+        self.assertIn("含む:手術,予定表,発行", result)
 
     def test_allow_exact_match_only(self):
         allow = frozenset({"発行プレビュー"})
@@ -40,8 +40,8 @@ class IdentTest(unittest.TestCase):
 class PathTest(unittest.TestCase):
     def test_ssi_template_shown(self):
         allow = frozenset(iu.DEFAULT_ALLOW)
-        self.assertEqual(iu.mask_path(r"C:\SSI\Excel\主術依頼箋.xls", allow),
-                         r"C:\SSI\Excel\主術依頼箋.xls")
+        self.assertEqual(iu.mask_path(r"C:\SSI\Excel\手術\手術依頼箋.xls", allow),
+                         r"C:\SSI\Excel\手術\手術依頼箋.xls")
 
     def test_other_path_hidden_with_extension(self):
         result = iu.mask_path(r"C:\Users\dummy\Desktop\ダミー患者.xls")
