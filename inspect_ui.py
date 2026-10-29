@@ -442,7 +442,7 @@ def excel_app_from_window(xlmain):
         # ObjectFromAddress は自分の分の参照を別に持つので、ここで得た分は手放す。
         # 手放さないと、Quit しても Excel のプロセスが残る。
         if ptr.value:
-            ctypes.WINFUNCTYPE(ctypes.c_ulong, ctypes.c_void_p)(2, "Release")(ptr)  # IUnknown::Release
+            ctypes.WINFUNCTYPE(ctypes.c_ulong)(2, "Release")(ptr)  # IUnknown::Release（ptr は this として渡る）
     return window.Application
 
 

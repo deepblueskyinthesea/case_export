@@ -140,6 +140,7 @@ class Watcher:
         self.apps = {}      # Excel ウィンドウ -> Application（接続はなるべく 1 ウィンドウ 1 回）
         self.pending = {}   # Excel ウィンドウ -> Pending
         self.skipped = set()  # 保存や読み取りに失敗し、ブックが開いたままかもしれない Excel
+        self.connect_failures = {}  # Excel ウィンドウ -> 続けて接続に失敗した回数
         self.saved = {}     # 内容の指紋 -> ファイル名
         self.number = 0
         self.count = 0
@@ -158,9 +159,14 @@ class Watcher:
                         continue
                     self.apps[hwnd] = app
                 wb = find_target(app)
-            except Exception:  # noqa: BLE001 - Excel の起動中など。次の回に接続し直す
+            except Exception as e:  # noqa: BLE001 - Excel の起動中など。次の回に接続し直す
                 self.apps.pop(hwnd, None)
+                n = self.connect_failures[hwnd] = self.connect_failures.get(hwnd, 0) + 1
+                if n == MAX_FAILURES:  # 起動中の一時的な失敗は黙って待ち、続くときだけ一度知らせる
+                    print(f"※ Excel に接続できません（{type(e).__name__}）。"
+                          "保存されなければ、この患者は手で保存してください。")
                 continue
+            self.connect_failures.pop(hwnd, None)
             if wb is not None:  # 手術依頼箋ではないブックには触らない
                 self.pending[hwnd] = Pending(app, wb)
 

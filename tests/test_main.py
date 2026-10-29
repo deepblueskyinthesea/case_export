@@ -5,6 +5,7 @@ import io
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import main
 
@@ -158,6 +159,23 @@ class WatcherCheckTest(unittest.TestCase):
             self.assertTrue((Path(d) / "002.xls").exists())
             self.assertIn("001.xls と内容が同じです", out)
             self.assertEqual(w.count, 2)
+
+
+class PollTest(unittest.TestCase):
+    def test_connect_failure_reported_once(self):
+        def fail(hwnd):
+            raise TypeError("ダミー")
+
+        with tempfile.TemporaryDirectory() as d:
+            w = main.Watcher(Path(d))
+            out = io.StringIO()
+            with mock.patch.object(main, "excel_windows", return_value=[1]), \
+                    mock.patch("inspect_ui.excel_app_from_window", fail), \
+                    contextlib.redirect_stdout(out):
+                for _ in range(main.MAX_FAILURES * 2):
+                    w.poll()
+            self.assertEqual(out.getvalue().count("Excel に接続できません（TypeError）"), 1)
+            self.assertNotIn("ダミー", out.getvalue())
 
 
 class MainTest(unittest.TestCase):
