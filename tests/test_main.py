@@ -161,6 +161,80 @@ class WatcherCheckTest(unittest.TestCase):
             self.assertEqual(w.count, 2)
 
 
+class SettingsTest(unittest.TestCase):
+    GRID = (40, 400, 990, 700)  # 患者一覧の画面上の範囲（ダミー）
+
+    def test_make_settings_from_two_rows(self):
+        s = main.make_settings((100, 420), (100, 640), 12, self.GRID, 96)
+        self.assertEqual(s, {"dpi": 96, "x": 60, "y": 20, "row_height": 20.0})
+
+    def test_make_settings_rejects_bad_input(self):
+        with self.assertRaises(ValueError):
+            main.make_settings((100, 420), (100, 640), 1, self.GRID, 96)  # 1 行目同士
+        with self.assertRaises(ValueError):
+            main.make_settings((100, 420), (1000, 640), 12, self.GRID, 96)  # 一覧の外
+        with self.assertRaises(ValueError):
+            main.make_settings((100, 640), (100, 420), 12, self.GRID, 96)  # 上下が逆
+
+    def test_row_point_follows_grid(self):
+        s = {"dpi": 96, "x": 60, "y": 20, "row_height": 20.5}
+        self.assertEqual(main.row_point(s, self.GRID, 0), (100, 420))
+        self.assertEqual(main.row_point(s, self.GRID, 2), (100, 461))
+        moved = (140, 300, 1090, 600)  # ダイアログを動かしても、一覧の左上からの位置は同じ
+        self.assertEqual(main.row_point(s, moved, 2), (200, 361))
+
+    def test_row_point_stops_at_bottom(self):
+        s = {"dpi": 96, "x": 60, "y": 20, "row_height": 20}
+        self.assertIsNotNone(main.row_point(s, self.GRID, 13))  # y=680
+        self.assertIsNone(main.row_point(s, self.GRID, 14))     # y=700（下端）
+
+    def test_load_settings(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / main.SETTINGS_NAME
+            self.assertIsNone(main.load_settings(path))  # ない
+            path.write_text("{壊れている", encoding="utf-8")
+            self.assertIsNone(main.load_settings(path))
+            path.write_text('{"dpi": 96, "x": 60, "y": 20}', encoding="utf-8")
+            self.assertIsNone(main.load_settings(path))  # 項目が足りない
+            path.write_text('{"dpi": 96, "x": 60, "y": 20, "row_height": 20.5}', encoding="utf-8")
+            self.assertEqual(main.load_settings(path)["row_height"], 20.5)
+
+
+class RepeatTest(unittest.TestCase):
+    def run_book(self, w, hwnd, values):
+        app = FakeApp()
+        wb = FakeWorkbook(values)
+        p = w.pending[hwnd] = main.Pending(app, wb)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            for _ in range(main.STABLE_COUNT):
+                w.check(hwnd, p)
+        return wb, app
+
+    def test_same_as_previous_ends_without_saving(self):
+        with tempfile.TemporaryDirectory() as d:
+            w = main.Watcher(Path(d), end_on_repeat=True)
+            self.run_book(w, 1, (("ダミー1", 1),))
+            self.run_book(w, 2, (("ダミー2", 2),))
+            self.assertFalse(w.repeated)
+            wb, app = self.run_book(w, 3, (("ダミー2", 2),))  # 最後の患者がもう一度開いた
+            self.assertTrue(w.repeated)
+            self.assertEqual(w.count, 2)
+            self.assertFalse((Path(d) / "003.xls").exists())
+            self.assertTrue(wb.closed)
+            self.assertTrue(app.quit)
+            self.assertEqual(w.finished, 3)
+            self.assertEqual(w.last_done, 3)
+
+    def test_semi_auto_saves_repeat(self):
+        with tempfile.TemporaryDirectory() as d:
+            w = main.Watcher(Path(d))
+            self.run_book(w, 1, (("ダミー", 1),))
+            self.run_book(w, 2, (("ダミー", 1),))
+            self.assertFalse(w.repeated)
+            self.assertEqual(w.count, 2)
+
+
 class PollTest(unittest.TestCase):
     def test_connect_failure_reported_once(self):
         def fail(hwnd):
