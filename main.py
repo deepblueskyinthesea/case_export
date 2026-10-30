@@ -2,11 +2,11 @@
 
 使い方（院内の Windows 端末で、電子カルテを開いた状態で）:
   1. main.exe を起動する（前回の NNN.xls を消してよいか聞かれるので Enter）
-  2. 「手術依頼箋出力」ボタンが押されて手術予定表発行ダイアログが開く
+  2. 手術予定表発行ダイアログを手で開く（「手術依頼箋出力」ボタン。先に開いておいてもよい）
   3. 初回（と表示の拡大率を変えたとき）は、患者一覧の行の位置を測る（settings.json に記録）
   4. Enter で開始すると、1 行目から順に右クリック →「発行プレビュー」→ 保存して Excel を閉じる
      直前と同じ内容の Excel が開いたら一覧の終わりとみなして止まる。マウスを動かしても止まる。
-ダイアログが見つからないときは、第 2 段階の半自動（Excel を見張って保存するだけ）に切り替える。
+ダイアログに患者一覧が見つからないときは、第 2 段階の半自動（Excel を見張って保存するだけ）に切り替える。
 
 画面には保存したファイル名と件数だけを出し、患者名は出さない。
 """
@@ -33,8 +33,6 @@ STABLE_COUNT = 3  # データシートの内容がこの回数続けて同じな
 MAX_FAILURES = 10  # 続けて読めなかったらその Excel はあきらめる
 
 # 電子カルテの画面（第 1 段階の調査レポートで確かめた名前）
-EMR_MAIN_ID = "MainFrm"  # 電子カルテのメイン画面（Entrance.exe）の AutomationId
-BUTTON_NAME = "手術依頼箋出力"
 DIALOG_CLASS = "ThunderRT6FormDC"
 DIALOG_TITLE = "手術予定表発行"
 GRID_CLASS = "AfxOleControl42"  # 患者一覧（中の行は部品として取れないので座標で右クリックする）
@@ -46,8 +44,6 @@ SETTINGS_KEYS = ("dpi", "x", "y", "row_height")
 MIN_ROW_HEIGHT = 5   # これより低い行は測り間違いとみなす
 ROW_MARGIN = 3       # 一覧の下端からこれより近い位置は右クリックしない
 MAX_ROWS = 30        # 念のための上限（一覧は最大 12 人くらい）
-BUTTON_TIMEOUT = 60  # 「手術依頼箋出力」のある画面が開くのを待つ秒数
-DIALOG_TIMEOUT = 30  # ボタンを押してからダイアログが出るまで待つ秒数
 DIALOG_SETTLE = 2    # ダイアログが出てから一覧が埋まるまで待つ秒数
 MENU_TIMEOUT = 5     # 右クリックしてからメニューが出るまで待つ秒数
 EXCEL_TIMEOUT = 60   # 発行プレビューを押してから Excel を保存し終えるまで待つ秒数
@@ -406,57 +402,17 @@ def find_grid(dialog):
     return found[0] if len(found) == 1 else None
 
 
-def find_emr_button():
-    """電子カルテの「手術依頼箋出力」ボタン。同じ名前の部品が裏にもあるので、画面に出ていて押せるものを選ぶ。"""
-    from pywinauto import Desktop
-
-    for window in Desktop(backend="uia").windows(auto_id=EMR_MAIN_ID, framework_id="WinForm"):
-        try:
-            for button in window.descendants(title=BUTTON_NAME, control_type="Button"):
-                if button.is_visible() and button.is_enabled():
-                    return button
-        except Exception:  # noqa: BLE001 - 探している間に画面が切り替わった
-            continue
-    return None
-
-
-def wait_dialog(timeout):
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        dialog = find_dialog()
-        if dialog:
-            time.sleep(DIALOG_SETTLE)
-            return dialog
-        time.sleep(POLL_SECONDS)
-    return None
-
-
-def open_dialog():
+def wait_dialog():
+    """手術予定表発行ダイアログが開くまで待つ（開くのは手で行う）。"""
     dialog = find_dialog()
     if dialog:
         print("手術予定表発行ダイアログが開いているので、そのまま使います。")
         return dialog
-    button = find_emr_button()
-    if button is None:
-        print(f"「{BUTTON_NAME}」のある画面を開いてください（{BUTTON_TIMEOUT} 秒待ちます）…")
-        end = time.monotonic() + BUTTON_TIMEOUT
-        while button is None and time.monotonic() < end:
-            time.sleep(1)
-            if find_dialog():  # 手でボタンを押してダイアログを開いた
-                return wait_dialog(DIALOG_TIMEOUT)
-            button = find_emr_button()
-        if button is None:
-            print(f"※ 「{BUTTON_NAME}」ボタンが見つかりませんでした。")
-            return None
-    print(f"「{BUTTON_NAME}」を押しています…")
-    try:
-        button.invoke()
-    except Exception as e:  # noqa: BLE001
-        print(f"※ 「{BUTTON_NAME}」を押せませんでした（{type(e).__name__}）。")
-        return None
-    dialog = wait_dialog(DIALOG_TIMEOUT)
-    if dialog is None:
-        print("※ 手術予定表発行ダイアログが出ませんでした。")
+    print("手術予定表発行ダイアログを開いてください（開くと先に進みます。やめるときは Ctrl+C）…")
+    while not dialog:
+        time.sleep(POLL_SECONDS)
+        dialog = find_dialog()
+    time.sleep(DIALOG_SETTLE)
     return dialog
 
 
@@ -632,13 +588,11 @@ def auto_run(folder, dialog, grid, settings):
 
 
 def run(folder):
-    """自動で全患者を処理する。ダイアログが見つからなければ半自動に切り替える。(保存, 除外) の件数を返す。"""
-    dialog = open_dialog()
-    grid = find_grid(dialog) if dialog else None
-    if dialog and grid is None:
-        print("※ 手術予定表発行ダイアログの患者一覧が見つかりませんでした。")
+    """自動で全患者を処理する。患者一覧が見つからなければ半自動に切り替える。(保存, 除外) の件数を返す。"""
+    dialog = wait_dialog()
+    grid = find_grid(dialog)
     if grid is None:
-        print("半自動に切り替えます。")
+        print("※ 手術予定表発行ダイアログの患者一覧が見つかりませんでした。半自動に切り替えます。")
         return watch(folder)
     settings = ensure_settings(grid)
     input("Enter で自動処理を始めます。終わるまでマウスとキーボードに触らないでください: ")
