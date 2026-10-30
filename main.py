@@ -49,7 +49,8 @@ BORDER_INSET = 3      # 一覧の外枠として読み飛ばす幅（px）
 COLOR_SHARE = 0.5     # 横一列のうちこの割合以上を占める色を、その列の色とみなす
 MAX_LINE_HEIGHT = 3   # これ以下の高さの色の帯は区切り線とみなす
 ROW_TOLERANCE = 2     # 行の始まりの位置のずれの許容（px）
-DARK_LEVEL = 160      # 一覧の下の空き（ダークグレー）とみなす明るさの上限（0～255）
+DARK_LEVEL = 200      # 一覧の下の空き（ダークグレー）とみなす明るさの上限（0～255）
+GRAY_SPREAD = 16      # 赤・緑・青の差がこれ以下の色を灰色とみなす
 ROW_MARGIN = 3       # 一覧の下端からこれより近い位置は右クリックしない
 MAX_ROWS = 30        # 念のための上限（一覧は最大 12 人くらい）
 DIALOG_SETTLE = 2    # ダイアログが出てから一覧が埋まるまで待つ秒数
@@ -160,11 +161,24 @@ def band_edge(colors, y, step, color):
     return edge
 
 
+def is_dark_gray(color):
+    """一覧の下の空き（ダークグレー）の色か。患者の行の色（白・ピンク・青）は灰色ではない。"""
+    return color is not None and max(color) - min(color) <= GRAY_SPREAD and sum(color) / 3 <= DARK_LEVEL
+
+
+def describe_bands(colors):
+    """読み取れなかったときに見せる、上からの色の帯の並び（y・高さ・色）。色の数値だけで患者情報は含まない。"""
+    return [f"  y={s:4} 高さ {e - s:3}  {'読めない' if color is None else color}"
+            for color, s, e in color_bands(colors, 0, len(colors))]
+
+
 def analyze_grid(colors, first_y):
     """一覧の列ごとの色から (1 行目の上端, 行の高さ, 人数) を求める。読み取れなければ ValueError。
 
     first_y は 1 行目（選んで青くなった行）の中の y。1 行目の帯の上端から、区切り線の色で行を分け、
-    下の空き（ダークグレー）の手前までを数える。行の始まりが等間隔に並ばなければ読み違いとみなす。
+    下の空き（ダークグレー）の手前までを数える。空きは 1 行目より下で一番下にある、行 1 つ分以上の
+    高さのダークグレーの帯（その下の横のスクロールバーなどは飛ばす）。行の始まりが等間隔に並ばなければ
+    読み違いとみなす。
     """
     n = len(colors)
     y = next((y for y in sorted(range(n), key=lambda y: abs(y - first_y))
@@ -175,13 +189,11 @@ def analyze_grid(colors, first_y):
     top = band_edge(colors, y, -1, first)
     first_end = band_edge(colors, y, 1, first) + 1
 
-    known = [y for y in range(n) if colors[y] is not None]
-    dark_color = colors[known[-1]]
-    if dark_color == first or sum(dark_color) / 3 > DARK_LEVEL:
+    dark = next((s for color, s, e in reversed(color_bands(colors, first_end, n))
+                 if e - s >= MIN_ROW_HEIGHT and is_dark_gray(color)), None)
+    if dark is None:
         raise ValueError("一覧の下のダークグレーが見つかりませんでした")
-    dark = known[-1]
-    while dark - 1 >= first_end and colors[dark - 1] == dark_color:
-        dark -= 1
+    dark = max(band_edge(colors, dark, -1, colors[dark]), first_end)  # 途中の読めない列の上も含める
 
     bands = color_bands(colors, first_end, dark)
     lines = [c for c, s, e in bands if c is not None and e - s <= MAX_LINE_HEIGHT]
@@ -700,7 +712,13 @@ def read_rows(dialog, grid, settings):
             raise ValueError("患者一覧が別の画面に隠れています")
     mouse.click(coords=first)  # 手で左クリックしたときと同じく、1 行目が青くなる
     time.sleep(0.5)
-    row_top, height, count = analyze_grid(row_colors(capture(rect)), settings["y"])
+    colors = row_colors(capture(rect))
+    try:
+        row_top, height, count = analyze_grid(colors, settings["y"])
+    except ValueError:
+        print(f"一覧の色の帯（上から。1 行目は y={settings['y']} のあたり）:")
+        print("\n".join(describe_bands(colors)))
+        raise
     layout = {"x": settings["x"], "y": row_top + height / 2, "row_height": height}
     return layout, count
 

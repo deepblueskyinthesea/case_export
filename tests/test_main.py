@@ -207,7 +207,7 @@ LINE, HEADER, DARK, BORDER, BLACK = (192, 192, 192), (240, 240, 240), (100, 100,
 
 
 def grid_pixels(colors, row_height=20, header=24, width=80, line=1, dark=60,
-                scrollbar=0, blue_covers_line=False):
+                scrollbar=0, blue_covers_line=False, dark_color=DARK, hscroll=0):
     """患者一覧の画面を模したダミーの色の並び。返すのは (pixels, 1 行目の上端の y)。"""
     def pixel_row(color, text=None):
         row = [color] * width
@@ -228,7 +228,8 @@ def grid_pixels(colors, row_height=20, header=24, width=80, line=1, dark=60,
         text = WHITE if color == BLUE else BLACK
         pixels += [pixel_row(color, text if 5 < y < 14 else None) for y in range(row_height - lines)]
         pixels += [pixel_row(LINE) for _ in range(lines)]
-    pixels += [pixel_row(DARK) for _ in range(dark)]
+    pixels += [pixel_row(dark_color) for _ in range(dark)]
+    pixels += [pixel_row(HEADER) for _ in range(hscroll)]  # 横のスクロールバー
     pixels += [[BORDER] * width for _ in range(2)]
     return pixels, top
 
@@ -264,6 +265,26 @@ class AnalyzeGridTest(unittest.TestCase):
         pixels, top = grid_pixels([BLUE, WHITE, WHITE], dark=0)
         with self.assertRaises(ValueError):
             self.analyze(pixels, top + 10)
+
+    def test_horizontal_scrollbar_below_dark(self):
+        pixels, top = grid_pixels([BLUE, WHITE, PINK, WHITE], hscroll=17)
+        self.assertEqual(self.analyze(pixels, top + 10), (top, 20.0, 4))
+
+    def test_standard_gray(self):
+        pixels, top = grid_pixels([BLUE, WHITE, WHITE], dark_color=(171, 171, 171), hscroll=17)
+        self.assertEqual(self.analyze(pixels, top + 10), (top, 20.0, 3))
+
+    def test_no_dark_area_above_scrollbar(self):
+        pixels, top = grid_pixels([BLUE, WHITE, WHITE], dark=0, hscroll=17)
+        with self.assertRaises(ValueError):
+            self.analyze(pixels, top + 10)
+
+    def test_describe_bands(self):
+        pixels, top = grid_pixels([BLUE, WHITE], dark=10, hscroll=17)
+        lines = main.describe_bands(main.row_colors(pixels))
+        self.assertIn("高さ  10  (100, 100, 100)", lines[-3])
+        self.assertIn("高さ  16  (240, 240, 240)", lines[-2])  # 外枠ぶん 1 列減る
+        self.assertIn("読めない", lines[-1])
 
     def test_no_lines_between_rows(self):
         pixels, top = grid_pixels([BLUE, WHITE, WHITE, WHITE, WHITE], line=0)
