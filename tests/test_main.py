@@ -63,10 +63,14 @@ class FakeSheet:
     def UsedRange(self):
         return type("Range", (), {"Value": self.book.values})()
 
+    def Range(self, address):
+        return type("Range", (), {"Value": self.book.cells.get(address)})()
+
 
 class FakeWorkbook:
-    def __init__(self, values):
+    def __init__(self, values, cells=None):
         self.values = values
+        self.cells = cells or {}  # データシートのセル番地 -> 値
         self.closed = False
 
     def Worksheets(self, name):
@@ -200,10 +204,21 @@ class SettingsTest(unittest.TestCase):
             self.assertEqual(main.load_settings(path)["row_height"], 20.5)
 
 
+class ExcludeTest(unittest.TestCase):
+    def test_only_local_anesthesia_alone(self):
+        self.assertTrue(main.is_excluded("局所麻酔", None))
+        self.assertTrue(main.is_excluded("局所麻酔", ""))
+        self.assertTrue(main.is_excluded(None, "局所麻酔"))
+        self.assertFalse(main.is_excluded("麻酔科一任", None))
+        self.assertFalse(main.is_excluded("全身麻酔", "局所麻酔"))
+        self.assertFalse(main.is_excluded("局所麻酔（ダミー）", None))
+        self.assertFalse(main.is_excluded(None, None))
+
+
 class RepeatTest(unittest.TestCase):
-    def run_book(self, w, hwnd, values):
+    def run_book(self, w, hwnd, values, anesthesia="麻酔科一任"):
         app = FakeApp()
-        wb = FakeWorkbook(values)
+        wb = FakeWorkbook(values, {"B14": anesthesia})
         p = w.pending[hwnd] = main.Pending(app, wb)
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
@@ -225,6 +240,34 @@ class RepeatTest(unittest.TestCase):
             self.assertTrue(app.quit)
             self.assertEqual(w.finished, 3)
             self.assertEqual(w.last_done, 3)
+
+    def test_local_anesthesia_skipped_and_numbers_packed(self):
+        with tempfile.TemporaryDirectory() as d:
+            w = main.Watcher(Path(d), end_on_repeat=True)
+            self.run_book(w, 1, (("ダミー1", 1),))
+            wb, app = self.run_book(w, 2, (("ダミー2", 2),), anesthesia="局所麻酔")
+            self.run_book(w, 3, (("ダミー3", 3),))
+            self.assertTrue(wb.closed)
+            self.assertTrue(app.quit)
+            self.assertEqual((w.count, w.excluded), (2, 1))
+            self.assertEqual(sorted(x.name for x in Path(d).iterdir()), ["001.xls", "002.xls"])
+            self.assertEqual(w.finished, 3)
+
+    def test_end_detected_when_last_is_local(self):
+        with tempfile.TemporaryDirectory() as d:
+            w = main.Watcher(Path(d), end_on_repeat=True)
+            self.run_book(w, 1, (("ダミー1", 1),))
+            self.run_book(w, 2, (("ダミー2", 2),), anesthesia="局所麻酔")
+            self.assertFalse(w.repeated)
+            self.run_book(w, 3, (("ダミー2", 2),), anesthesia="局所麻酔")  # 最後の患者がもう一度開いた
+            self.assertTrue(w.repeated)
+            self.assertEqual((w.count, w.excluded), (1, 1))
+
+    def test_semi_auto_excludes_too(self):
+        with tempfile.TemporaryDirectory() as d:
+            w = main.Watcher(Path(d))
+            self.run_book(w, 1, (("ダミー", 1),), anesthesia="局所麻酔")
+            self.assertEqual((w.count, w.excluded), (0, 1))
 
     def test_semi_auto_saves_repeat(self):
         with tempfile.TemporaryDirectory() as d:

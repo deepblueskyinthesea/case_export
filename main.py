@@ -24,6 +24,9 @@ from pathlib import Path
 
 TEMPLATE_PATH = r"C:\SSI\Excel\手術\手術依頼箋.xls"
 DATA_SHEET = "データ"  # 電子カルテが値を書き込むシート
+# 依頼箋シートの麻酔の欄は =IF(データ!B14="","",データ!B14)&"  "&IF(データ!C14="","",データ!C14)
+ANESTHESIA_CELLS = ("B14", "C14")
+EXCLUDED_ANESTHESIA = "局所麻酔"  # 麻酔の欄がちょうどこれなら保存しない（ほかの文字が付けば残す）
 OUTPUT_FOLDER_NAME = "症例ファイル"
 POLL_SECONDS = 0.5
 STABLE_COUNT = 3  # データシートの内容がこの回数続けて同じなら書き込み完了とみなす
@@ -76,6 +79,12 @@ def next_number(folder, start):
 
 def is_target(full_name):
     return str(full_name).lower() == TEMPLATE_PATH.lower()
+
+
+def is_excluded(b14, c14):
+    """麻酔の欄（B14 と C14 を空白 2 つでつないだもの）が局所麻酔だけか。"""
+    text = f"{'' if b14 is None else b14}  {'' if c14 is None else c14}"
+    return text.strip() == EXCLUDED_ANESTHESIA
 
 
 def content_hash(values):
@@ -211,7 +220,8 @@ class Watcher:
         self.saved = {}     # 内容の指紋 -> ファイル名
         self.number = 0
         self.count = 0
-        self.last_saved = None  # 直前に保存した内容の指紋
+        self.excluded = 0
+        self.last_seen = None   # 直前に開いた（保存か除外した）内容の指紋
         self.repeated = False   # 直前と同じ内容が開いた（一覧の終わり）
         self.finished = 0       # 保存・飛ばし・終わりの判定のどれかで片付けたブックの数
         self.last_done = None   # 最後に片付けた Excel ウィンドウ
@@ -263,12 +273,25 @@ class Watcher:
             return
         p.failures = 0
         p.last_hash, p.stable = update_stability(p.last_hash, p.stable, content_hash(values), ready)
-        if p.stable >= STABLE_COUNT:
-            if self.end_on_repeat and p.last_hash == self.last_saved:
-                self.repeated = True  # 一覧の下の空いた行を右クリックすると、最後の患者がもう一度開く
-                self.close(hwnd, p)
-            else:
-                self.save(hwnd, p)
+        if p.stable < STABLE_COUNT:
+            return
+        if self.end_on_repeat and p.last_hash == self.last_seen:
+            self.repeated = True  # 一覧の下の空いた行を右クリックすると、最後の患者がもう一度開く
+            self.close(hwnd, p)
+            return
+        try:
+            sheet = call(lambda: p.wb.Worksheets(DATA_SHEET))
+            b14, c14 = (call(lambda a=a: sheet.Range(a).Value) for a in ANESTHESIA_CELLS)
+        except Exception:  # noqa: BLE001
+            p.failures += 1  # 次の回に読み直す
+            return
+        self.last_seen = p.last_hash
+        if is_excluded(b14, c14):
+            self.excluded += 1
+            print(f"局所麻酔なので保存せずに閉じました（除外 {self.excluded} 件目）")
+            self.close(hwnd, p)
+        else:
+            self.save(hwnd, p)
 
     def save(self, hwnd, p):
         self.number = next_number(self.folder, self.number + 1)
@@ -282,7 +305,6 @@ class Watcher:
             self.done(hwnd, skip=True)
             return
         self.count += 1
-        self.last_saved = p.last_hash
         print(f"{target.name} を保存しました（{self.count} 件目）")
         same = self.saved.setdefault(p.last_hash, target.name)
         if same != target.name:
@@ -323,7 +345,7 @@ def watch(folder):
             time.sleep(POLL_SECONDS)
     except KeyboardInterrupt:
         pass
-    return watcher.count
+    return watcher.count, watcher.excluded
 
 
 # ---------------------------------------------------------------- 自動操作（第 3 段階）
@@ -564,7 +586,7 @@ def wait_closed(hwnd):
 
 
 def auto_run(folder, dialog, grid, settings):
-    """患者一覧を 1 行目から順に右クリック →「発行プレビュー」して保存する。保存した件数を返す。"""
+    """患者一覧を 1 行目から順に右クリック →「発行プレビュー」して保存する。(保存, 除外) の件数を返す。"""
     import win32gui
     import win32process
     from pywinauto import mouse
@@ -588,7 +610,7 @@ def auto_run(folder, dialog, grid, settings):
             if not grid_visible_at(grid, point):
                 print(f"※ {row} 行目が別の画面に隠れているので止めました。")
                 break
-        before, saved_before = watcher.finished, watcher.count
+        before, saved_before, excluded_before = watcher.finished, watcher.count, watcher.excluded
         mouse.right_click(coords=point)
         if not choose_preview(pid):
             print(f"※ {row} 行目で「{MENU_ITEM}」のメニューが出なかったので止めました。")
@@ -600,17 +622,17 @@ def auto_run(folder, dialog, grid, settings):
         if watcher.repeated:
             print("一覧の最後まで処理しました（最後の患者がもう一度開いたので、保存せずに閉じました）。")
             break
-        if watcher.count == saved_before:  # 保存に失敗した（理由は表示済み）
+        if watcher.count == saved_before and watcher.excluded == excluded_before:  # 保存に失敗した（理由は表示済み）
             print(f"※ {row} 行目で止めました。")
             break
         wait_closed(watcher.last_done)
     else:
         print(f"※ {MAX_ROWS} 行で止めました。")
-    return watcher.count
+    return watcher.count, watcher.excluded
 
 
 def run(folder):
-    """自動で全患者を処理する。ダイアログが見つからなければ半自動に切り替える。保存した件数を返す。"""
+    """自動で全患者を処理する。ダイアログが見つからなければ半自動に切り替える。(保存, 除外) の件数を返す。"""
     dialog = open_dialog()
     grid = find_grid(dialog) if dialog else None
     if dialog and grid is None:
@@ -651,11 +673,12 @@ def main():
         return 1
 
     try:
-        count = run(folder)
+        count, excluded = run(folder)
     except KeyboardInterrupt:
         print("\n中止しました。")
         return 1
-    print(f"\n終了しました。保存した件数: {count} 件（一覧の人数と合っているか確かめてください）")
+    print(f"\n終了しました。保存 {count} 件、局所麻酔で除外 {excluded} 件"
+          "（合計が一覧の人数と合っているか確かめてください）")
     return 0
 
 
