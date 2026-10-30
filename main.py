@@ -3,9 +3,10 @@
 使い方（院内の Windows 端末で、電子カルテを開いた状態で）:
   1. main.exe を起動する（前回の NNN.xls を消してよいか聞かれるので Enter）
   2. 手術予定表発行ダイアログを手で開く（「手術依頼箋出力」ボタン。先に開いておいてもよい）
-  3. 初回（と表示の拡大率を変えたとき）は、患者一覧の行の位置を測る（settings.json に記録）
-  4. Enter で開始すると、1 行目から順に右クリック →「発行プレビュー」→ 保存して Excel を閉じる
-     直前と同じ内容の Excel が開いたら一覧の終わりとみなして止まる。マウスを動かしても止まる。
+  3. 初回（と表示の拡大率を変えたとき）は、1 行目の位置を測る（マウスを置いて Enter。settings.json に記録）
+  4. Enter で開始すると、1 行目を選んで一覧の色から行の高さと人数を読み取り、
+     1 行目から順に右クリック →「発行プレビュー」→ 保存して Excel を閉じるを人数分繰り返す。
+     マウスを動かすと止まる。一覧を読み取れなければ半自動に切り替える。
 ダイアログに患者一覧が見つからないときは、第 2 段階の半自動（Excel を見張って保存するだけ）に切り替える。
 
 画面には保存したファイル名と件数だけを出し、患者名は出さない。
@@ -39,9 +40,16 @@ GRID_CLASS = "AfxOleControl42"  # 患者一覧（中の行は部品として取�
 MENU_CLASS = "#32768"
 MENU_ITEM = "発行プレビュー"
 
-SETTINGS_NAME = "settings.json"  # 行の位置（main.exe と同じフォルダ）
-SETTINGS_KEYS = ("dpi", "x", "y", "row_height")
-MIN_ROW_HEIGHT = 5   # これより低い行は測り間違いとみなす
+SETTINGS_NAME = "settings.json"  # 1 行目の位置（main.exe と同じフォルダ）
+SETTINGS_VERSION = 2  # 1 は行番号を数えて測っていた形式（測り直す）
+SETTINGS_KEYS = ("dpi", "x", "y")
+MIN_ROW_HEIGHT = 5   # これより低い行は読み間違いとみなす
+# 患者一覧の色の読み取り（横一列ごとの「一番多い色」を上から並べて、行・区切り線・下の空きを見分ける）
+BORDER_INSET = 3      # 一覧の外枠として読み飛ばす幅（px）
+COLOR_SHARE = 0.5     # 横一列のうちこの割合以上を占める色を、その列の色とみなす
+MAX_LINE_HEIGHT = 3   # これ以下の高さの色の帯は区切り線とみなす
+ROW_TOLERANCE = 2     # 行の始まりの位置のずれの許容（px）
+DARK_LEVEL = 160      # 一覧の下の空き（ダークグレー）とみなす明るさの上限（0～255）
 ROW_MARGIN = 3       # 一覧の下端からこれより近い位置は右クリックしない
 MAX_ROWS = 30        # 念のための上限（一覧は最大 12 人くらい）
 DIALOG_SETTLE = 2    # ダイアログが出てから一覧が埋まるまで待つ秒数
@@ -97,21 +105,104 @@ def update_stability(prev_hash, stable, new_hash, ready):
     return new_hash, 1
 
 
-def make_settings(first, last, rows, grid_rect, dpi):
-    """測った 2 点（画面座標）から、患者一覧の左上を基準にした行の位置を作る。
-
-    first は 1 行目、last は上から rows 行目の点。離れた行で測るほど行の高さの誤差が小さい。
-    """
+def make_settings(point, grid_rect, dpi):
+    """1 行目に置いたマウスの位置（画面座標）を、患者一覧の左上からの位置にする。"""
     left, top, right, bottom = grid_rect
-    if rows < 2:
-        raise ValueError("2 行目より下の行で測ってください")
-    for x, y in (first, last):
-        if not (left <= x < right and top <= y < bottom):
-            raise ValueError("マウスが患者一覧の外にありました")
-    height = (last[1] - first[1]) / (rows - 1)
-    if height < MIN_ROW_HEIGHT:
-        raise ValueError("行の高さを計算できませんでした。行番号を確かめてください")
-    return {"dpi": dpi, "x": first[0] - left, "y": first[1] - top, "row_height": height}
+    x, y = point
+    if not (left <= x < right and top <= y < bottom):
+        raise ValueError("マウスが患者一覧の外にありました")
+    return {"version": SETTINGS_VERSION, "dpi": dpi, "x": x - left, "y": y - top}
+
+
+def row_colors(pixels):
+    """横一列ごとの「一番多い色」。どの色も COLOR_SHARE に届かない列と外枠の列は None。
+
+    pixels は [行][列] -> (r, g, b)。文字や縦の区切り線、外枠、スクロールバーは少数なので無視される。
+    """
+    from collections import Counter
+
+    colors = []
+    height = len(pixels)
+    for y, line in enumerate(pixels):
+        inner = line[BORDER_INSET:len(line) - BORDER_INSET]
+        if y < BORDER_INSET or y >= height - BORDER_INSET or not inner:
+            colors.append(None)
+            continue
+        color, n = Counter(inner).most_common(1)[0]
+        colors.append(color if n >= len(inner) * COLOR_SHARE else None)
+    return colors
+
+
+def color_bands(colors, start, end):
+    """colors[start:end] の、同じ色が続く帯 (色, 始まり, 終わり) の並び。"""
+    bands = []
+    y = start
+    while y < end:
+        s = y
+        while y < end and colors[y] == colors[s]:
+            y += 1
+        bands.append((colors[s], s, y))
+    return bands
+
+
+def band_edge(colors, y, step, color):
+    """y から step（-1 か 1）の向きに見た、color の帯の端の y。
+
+    途中の読めない列（None。文字が多い列など）は、その先も同じ色なら帯に含める。
+    """
+    edge = i = y
+    while 0 <= i + step < len(colors):
+        i += step
+        if colors[i] == color:
+            edge = i
+        elif colors[i] is not None:
+            break
+    return edge
+
+
+def analyze_grid(colors, first_y):
+    """一覧の列ごとの色から (1 行目の上端, 行の高さ, 人数) を求める。読み取れなければ ValueError。
+
+    first_y は 1 行目（選んで青くなった行）の中の y。1 行目の帯の上端から、区切り線の色で行を分け、
+    下の空き（ダークグレー）の手前までを数える。行の始まりが等間隔に並ばなければ読み違いとみなす。
+    """
+    n = len(colors)
+    y = next((y for y in sorted(range(n), key=lambda y: abs(y - first_y))
+              if abs(y - first_y) <= MAX_LINE_HEIGHT and colors[y] is not None), None)
+    if y is None:
+        raise ValueError("1 行目の色を読み取れませんでした")
+    first = colors[y]
+    top = band_edge(colors, y, -1, first)
+    first_end = band_edge(colors, y, 1, first) + 1
+
+    known = [y for y in range(n) if colors[y] is not None]
+    dark_color = colors[known[-1]]
+    if dark_color == first or sum(dark_color) / 3 > DARK_LEVEL:
+        raise ValueError("一覧の下のダークグレーが見つかりませんでした")
+    dark = known[-1]
+    while dark - 1 >= first_end and colors[dark - 1] == dark_color:
+        dark -= 1
+
+    bands = color_bands(colors, first_end, dark)
+    lines = [c for c, s, e in bands if c is not None and e - s <= MAX_LINE_HEIGHT]
+    line_color = max(set(lines), key=lines.count) if lines else None
+    rows = [(top, first_end)]
+    start = first_end
+    for color, s, e in bands:
+        if color == line_color and e - s <= MAX_LINE_HEIGHT:
+            rows.append((start, s))
+            start = e
+    rows.append((start, dark))
+    rows = [r for r in rows if r[1] - r[0] > MAX_LINE_HEIGHT]  # 二重線の片側などの細い切れ端
+
+    count = len(rows)
+    height = (dark - top) / count
+    if height < MIN_ROW_HEIGHT or count > MAX_ROWS:
+        raise ValueError("行の高さを読み取れませんでした")
+    for k, (s, _) in enumerate(rows):
+        if abs(s - (top + k * height)) > ROW_TOLERANCE:
+            raise ValueError("行の高さがそろっていませんでした")
+    return top, height, count
 
 
 def row_point(settings, grid_rect, index):
@@ -130,7 +221,7 @@ def load_settings(path):
         data = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    if not isinstance(data, dict):
+    if not isinstance(data, dict) or data.get("version") != SETTINGS_VERSION:
         return None
     if not all(isinstance(data.get(k), (int, float)) and not isinstance(data.get(k), bool)
                for k in SETTINGS_KEYS):
@@ -425,19 +516,12 @@ def cursor_pos():
 def measure(grid, dpi):
     import win32gui
 
-    print("患者一覧の行の位置を測ります。クリックはせず、マウスを置いてからこの画面で Enter を押してください。")
+    print("患者一覧の 1 行目の位置を測ります。クリックはせず、マウスを置いてからこの画面で Enter を押してください。")
     print("（このウィンドウが患者一覧に重なっていたら、ずらしてください）")
     while True:
-        input("1 行目の患者の上にマウスを置いて Enter: ")
-        first = cursor_pos()
-        input("一番下に見えている患者の上にマウスを置いて Enter: ")
-        last = cursor_pos()
-        rows = input("その患者は上から何行目ですか（数字で入力して Enter）: ").strip()
-        if not rows.isdigit():
-            print("※ 数字で入力してください。もう一度測ります。")
-            continue
+        input("1 行目の患者の名前か日付の上にマウスを置いて Enter（チェックボックスは避けてください）: ")
         try:
-            return make_settings(first, last, int(rows), win32gui.GetWindowRect(grid), dpi)
+            return make_settings(cursor_pos(), win32gui.GetWindowRect(grid), dpi)
         except ValueError as e:
             print(f"※ {e}。もう一度測ります。")
 
@@ -447,16 +531,18 @@ def ensure_settings(grid):
     dpi = system_dpi()
     settings = load_settings(path)
     if settings is not None and settings["dpi"] == dpi:
-        print(f"行の位置は {path.name} を使います（測り直すときはこのファイルを削除してください）。")
+        print(f"1 行目の位置は {path.name} を使います（測り直すときはこのファイルを削除してください）。")
         return settings
     if settings is not None:
         print("表示の拡大率が前回測ったときと違うので、測り直します。")
+    elif path.exists():
+        print(f"{path.name} が古い形式か壊れているので、測り直します。")
     settings = measure(grid, dpi)
     try:
         path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
-        print(f"行の位置を {path.name} に記録しました。")
+        print(f"1 行目の位置を {path.name} に記録しました。")
     except OSError as e:
-        print(f"※ 行の位置を記録できませんでした（{type(e).__name__}）。次回も測ります。")
+        print(f"※ 1 行目の位置を記録できませんでした（{type(e).__name__}）。次回も測ります。")
     return settings
 
 
@@ -541,19 +627,106 @@ def wait_closed(hwnd):
         time.sleep(POLL_SECONDS)
 
 
+def capture(rect):
+    """画面の rect の範囲の色を [行][列] -> (r, g, b) で返す。メモリの中だけで使い、保存しない。"""
+    import ctypes
+    from ctypes import wintypes
+
+    left, top, right, bottom = rect
+    width, height = right - left, bottom - top
+    user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
+    user32.GetDC.restype = wintypes.HDC
+    user32.GetDC.argtypes = [wintypes.HWND]
+    user32.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
+    gdi32.CreateCompatibleDC.restype = wintypes.HDC
+    gdi32.CreateCompatibleDC.argtypes = [wintypes.HDC]
+    gdi32.CreateCompatibleBitmap.restype = wintypes.HBITMAP
+    gdi32.CreateCompatibleBitmap.argtypes = [wintypes.HDC, ctypes.c_int, ctypes.c_int]
+    gdi32.SelectObject.restype = wintypes.HGDIOBJ
+    gdi32.SelectObject.argtypes = [wintypes.HDC, wintypes.HGDIOBJ]
+    gdi32.BitBlt.argtypes = [wintypes.HDC, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                             wintypes.HDC, ctypes.c_int, ctypes.c_int, wintypes.DWORD]
+    gdi32.GetDIBits.argtypes = [wintypes.HDC, wintypes.HBITMAP, wintypes.UINT, wintypes.UINT,
+                                ctypes.c_void_p, ctypes.c_void_p, wintypes.UINT]
+    gdi32.DeleteObject.argtypes = [wintypes.HGDIOBJ]
+    gdi32.DeleteDC.argtypes = [wintypes.HDC]
+
+    class BITMAPINFOHEADER(ctypes.Structure):
+        _fields_ = [("biSize", wintypes.DWORD), ("biWidth", wintypes.LONG), ("biHeight", wintypes.LONG),
+                    ("biPlanes", wintypes.WORD), ("biBitCount", wintypes.WORD),
+                    ("biCompression", wintypes.DWORD), ("biSizeImage", wintypes.DWORD),
+                    ("biXPelsPerMeter", wintypes.LONG), ("biYPelsPerMeter", wintypes.LONG),
+                    ("biClrUsed", wintypes.DWORD), ("biClrImportant", wintypes.DWORD)]
+
+    screen = user32.GetDC(None)
+    memory = gdi32.CreateCompatibleDC(screen)
+    bitmap = gdi32.CreateCompatibleBitmap(screen, width, height)
+    buf = ctypes.create_string_buffer(width * height * 4)
+    try:
+        old = gdi32.SelectObject(memory, bitmap)
+        gdi32.BitBlt(memory, 0, 0, width, height, screen, left, top, 0x00CC0020)  # SRCCOPY
+        gdi32.SelectObject(memory, old)  # GetDIBits はビットマップを DC から外して呼ぶ
+        header = BITMAPINFOHEADER(ctypes.sizeof(BITMAPINFOHEADER), width, -height, 1, 32)  # 上の行から
+        if gdi32.GetDIBits(memory, bitmap, 0, height, buf, ctypes.byref(header), 0) != height:
+            raise ValueError("画面を読み取れませんでした")
+    finally:
+        gdi32.DeleteObject(bitmap)
+        gdi32.DeleteDC(memory)
+        user32.ReleaseDC(None, screen)
+    data = buf.raw
+    stride = width * 4
+    return [[(data[i + 2], data[i + 1], data[i]) for i in range(y * stride, (y + 1) * stride, 4)]
+            for y in range(height)]  # BGRA の並び
+
+
+def read_rows(dialog, grid, settings):
+    """1 行目を左クリックして選び、一覧の色から行の位置と人数を読み取る。(行の位置, 人数) を返す。
+
+    行の位置は row_point に渡す形（1 行目の中央と行の高さ）。読み取れなければ ValueError。
+    """
+    import win32gui
+    from pywinauto import mouse
+
+    rect = win32gui.GetWindowRect(grid)
+    left, top, right, bottom = rect
+    first = (left + settings["x"], top + settings["y"])
+    inset = BORDER_INSET + 1
+    checks = [first, (left + inset, top + inset), (right - inset, top + inset),
+              (left + inset, bottom - inset), (right - inset, bottom - inset)]
+    if not all(grid_visible_at(grid, point) for point in checks):
+        bring_to_front(dialog)
+        time.sleep(0.5)
+        if not all(grid_visible_at(grid, point) for point in checks):
+            raise ValueError("患者一覧が別の画面に隠れています")
+    mouse.click(coords=first)  # 手で左クリックしたときと同じく、1 行目が青くなる
+    time.sleep(0.5)
+    row_top, height, count = analyze_grid(row_colors(capture(rect)), settings["y"])
+    layout = {"x": settings["x"], "y": row_top + height / 2, "row_height": height}
+    return layout, count
+
+
 def auto_run(folder, dialog, grid, settings):
-    """患者一覧を 1 行目から順に右クリック →「発行プレビュー」して保存する。(保存, 除外) の件数を返す。"""
+    """患者一覧を 1 行目から順に右クリック →「発行プレビュー」して保存する。(保存, 除外) の件数を返す。
+
+    一覧を読み取れなければ None を返す（半自動に切り替える）。
+    """
     import win32gui
     import win32process
     from pywinauto import mouse
 
+    bring_to_front(dialog)
+    try:
+        layout, total = read_rows(dialog, grid, settings)
+    except ValueError as e:
+        print(f"※ 患者一覧を読み取れませんでした（{e}）。")
+        return None
+    print(f"患者一覧: {total} 人分の行を見つけました。")
     watcher = Watcher(folder, end_on_repeat=True)
     pid = win32process.GetWindowThreadProcessId(dialog)[1]
-    bring_to_front(dialog)
     last_pos = None
-    for index in range(MAX_ROWS):
+    for index in range(total):
         row = index + 1
-        point = row_point(settings, win32gui.GetWindowRect(grid), index)
+        point = row_point(layout, win32gui.GetWindowRect(grid), index)
         if point is None:
             print("患者一覧の下端まで処理しました。")
             break
@@ -575,15 +748,15 @@ def auto_run(folder, dialog, grid, settings):
         if not wait_finished(watcher, before):
             print(f"※ {row} 行目で、{EXCEL_TIMEOUT} 秒たっても Excel を保存できなかったので止めました。")
             break
-        if watcher.repeated:
-            print("一覧の最後まで処理しました（最後の患者がもう一度開いたので、保存せずに閉じました）。")
+        if watcher.repeated:  # 読み取った人数が多すぎた（念のための止め方）
+            print(f"※ {row} 行目で直前と同じ患者が開いたので、保存せずに閉じて止めました。")
             break
         if watcher.count == saved_before and watcher.excluded == excluded_before:  # 保存に失敗した（理由は表示済み）
             print(f"※ {row} 行目で止めました。")
             break
         wait_closed(watcher.last_done)
     else:
-        print(f"※ {MAX_ROWS} 行で止めました。")
+        print(f"一覧の最後まで（{total} 人分）処理しました。")
     return watcher.count, watcher.excluded
 
 
@@ -596,7 +769,25 @@ def run(folder):
         return watch(folder)
     settings = ensure_settings(grid)
     input("Enter で自動処理を始めます。終わるまでマウスとキーボードに触らないでください: ")
-    return auto_run(folder, dialog, grid, settings)
+    result = auto_run(folder, dialog, grid, settings)
+    if result is None:
+        print("半自動に切り替えます。")
+        return watch(folder)
+    return result
+
+
+def focus_console():
+    """このウィンドウを前に戻す（終わったときの Enter が電子カルテのダイアログに入らないように）。"""
+    try:
+        import ctypes
+
+        from pywinauto.controls.hwndwrapper import HwndWrapper
+
+        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+        if hwnd:
+            HwndWrapper(hwnd).set_focus()
+    except Exception:  # noqa: BLE001 - 戻せなければ、表示のとおり手でクリックしてもらう
+        pass
 
 
 def main():
@@ -631,6 +822,8 @@ def main():
     except KeyboardInterrupt:
         print("\n中止しました。")
         return 1
+    finally:
+        focus_console()
     print(f"\n終了しました。保存 {count} 件、局所麻酔で除外 {excluded} 件"
           "（合計が一覧の人数と合っているか確かめてください）")
     return 0
@@ -643,5 +836,5 @@ if __name__ == "__main__":
     except Exception:  # noqa: BLE001
         traceback.print_exc()
         exit_code = 1
-    input("Enter キーで閉じます。")
+    input("この画面をクリックしてから Enter キーで閉じます。")
     sys.exit(exit_code)

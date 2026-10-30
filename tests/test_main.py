@@ -168,17 +168,13 @@ class WatcherCheckTest(unittest.TestCase):
 class SettingsTest(unittest.TestCase):
     GRID = (40, 400, 990, 700)  # 患者一覧の画面上の範囲（ダミー）
 
-    def test_make_settings_from_two_rows(self):
-        s = main.make_settings((100, 420), (100, 640), 12, self.GRID, 96)
-        self.assertEqual(s, {"dpi": 96, "x": 60, "y": 20, "row_height": 20.0})
+    def test_make_settings_from_first_row(self):
+        s = main.make_settings((100, 420), self.GRID, 96)
+        self.assertEqual(s, {"version": main.SETTINGS_VERSION, "dpi": 96, "x": 60, "y": 20})
 
-    def test_make_settings_rejects_bad_input(self):
+    def test_make_settings_rejects_outside(self):
         with self.assertRaises(ValueError):
-            main.make_settings((100, 420), (100, 640), 1, self.GRID, 96)  # 1 行目同士
-        with self.assertRaises(ValueError):
-            main.make_settings((100, 420), (1000, 640), 12, self.GRID, 96)  # 一覧の外
-        with self.assertRaises(ValueError):
-            main.make_settings((100, 640), (100, 420), 12, self.GRID, 96)  # 上下が逆
+            main.make_settings((1000, 420), self.GRID, 96)
 
     def test_row_point_follows_grid(self):
         s = {"dpi": 96, "x": 60, "y": 20, "row_height": 20.5}
@@ -198,10 +194,86 @@ class SettingsTest(unittest.TestCase):
             self.assertIsNone(main.load_settings(path))  # ない
             path.write_text("{壊れている", encoding="utf-8")
             self.assertIsNone(main.load_settings(path))
-            path.write_text('{"dpi": 96, "x": 60, "y": 20}', encoding="utf-8")
-            self.assertIsNone(main.load_settings(path))  # 項目が足りない
             path.write_text('{"dpi": 96, "x": 60, "y": 20, "row_height": 20.5}', encoding="utf-8")
-            self.assertEqual(main.load_settings(path)["row_height"], 20.5)
+            self.assertIsNone(main.load_settings(path))  # 行番号を数えて測っていた古い形式
+            path.write_text('{"version": 2, "dpi": 96, "x": 60}', encoding="utf-8")
+            self.assertIsNone(main.load_settings(path))  # 項目が足りない
+            path.write_text('{"version": 2, "dpi": 96, "x": 60, "y": 20}', encoding="utf-8")
+            self.assertEqual(main.load_settings(path)["y"], 20)
+
+
+WHITE, BLUE, PINK = (255, 255, 255), (0, 120, 215), (255, 210, 210)
+LINE, HEADER, DARK, BORDER, BLACK = (192, 192, 192), (240, 240, 240), (100, 100, 100), (64, 64, 64), (0, 0, 0)
+
+
+def grid_pixels(colors, row_height=20, header=24, width=80, line=1, dark=60,
+                scrollbar=0, blue_covers_line=False):
+    """患者一覧の画面を模したダミーの色の並び。返すのは (pixels, 1 行目の上端の y)。"""
+    def pixel_row(color, text=None):
+        row = [color] * width
+        row[40] = LINE  # 縦の区切り線
+        if text:
+            row[10:30] = [text] * 20  # 文字（少数）
+        if scrollbar:
+            row[width - 2 - scrollbar:width - 2] = [HEADER] * scrollbar
+        row[:2] = row[-2:] = [BORDER] * 2  # 外枠
+        return row
+
+    pixels = [[BORDER] * width for _ in range(2)]
+    pixels += [pixel_row(HEADER, BLACK if 5 < y < 15 else None) for y in range(header)]
+    pixels.append(pixel_row(LINE))
+    top = len(pixels)
+    for i, color in enumerate(colors):
+        lines = 0 if (i == 0 and blue_covers_line) else line
+        text = WHITE if color == BLUE else BLACK
+        pixels += [pixel_row(color, text if 5 < y < 14 else None) for y in range(row_height - lines)]
+        pixels += [pixel_row(LINE) for _ in range(lines)]
+    pixels += [pixel_row(DARK) for _ in range(dark)]
+    pixels += [[BORDER] * width for _ in range(2)]
+    return pixels, top
+
+
+class AnalyzeGridTest(unittest.TestCase):
+    def analyze(self, pixels, first_y):
+        return main.analyze_grid(main.row_colors(pixels), first_y)
+
+    def test_rows_and_height(self):
+        pixels, top = grid_pixels([BLUE, WHITE, PINK, WHITE, WHITE, WHITE, WHITE])
+        self.assertEqual(self.analyze(pixels, top + 10), (top, 20.0, 7))
+
+    def test_ignores_scrollbar_and_border(self):
+        pixels, top = grid_pixels([BLUE, WHITE, WHITE], scrollbar=15, row_height=23)
+        self.assertEqual(self.analyze(pixels, top + 3), (top, 23.0, 3))
+
+    def test_single_patient(self):
+        pixels, top = grid_pixels([BLUE])
+        self.assertEqual(self.analyze(pixels, top + 10), (top, 20.0, 1))
+
+    def test_selection_covering_line(self):
+        pixels, top = grid_pixels([BLUE, WHITE, WHITE, WHITE], blue_covers_line=True)
+        self.assertEqual(self.analyze(pixels, top + 10), (top, 20.0, 4))
+
+    def test_first_y_on_dense_text(self):
+        pixels, top = grid_pixels([BLUE, WHITE, WHITE])
+        for y in (top + 8, top + 28):  # 文字だらけの列（一番多い色が半分に届かない）
+            pixels[y] = [BORDER] * 2 + [WHITE] * 26 + [BLACK] * 25 + [BLUE] * 25 + [BORDER] * 2
+        self.assertIsNone(main.row_colors(pixels)[top + 8])
+        self.assertEqual(self.analyze(pixels, top + 8), (top, 20.0, 3))
+
+    def test_no_dark_area(self):
+        pixels, top = grid_pixels([BLUE, WHITE, WHITE], dark=0)
+        with self.assertRaises(ValueError):
+            self.analyze(pixels, top + 10)
+
+    def test_no_lines_between_rows(self):
+        pixels, top = grid_pixels([BLUE, WHITE, WHITE, WHITE, WHITE], line=0)
+        with self.assertRaises(ValueError):
+            self.analyze(pixels, top + 10)
+
+    def test_first_y_outside_rows(self):
+        pixels, top = grid_pixels([BLUE, WHITE])
+        with self.assertRaises(ValueError):
+            self.analyze(pixels, 0)  # 外枠の上
 
 
 class ExcludeTest(unittest.TestCase):
