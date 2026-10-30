@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import sys
 import time
@@ -52,6 +53,7 @@ ROW_TOLERANCE = 2     # 行の始まりの位置のずれの許容（px）
 DARK_LEVEL = 200      # 一覧の下の空き（ダークグレー）とみなす明るさの上限（0～255）
 GRAY_SPREAD = 16      # 赤・緑・青の差がこれ以下の色を灰色とみなす
 ROW_MARGIN = 3       # 一覧の下端からこれより近い位置は右クリックしない
+MOVE_ROWS = 3        # マウスがこの行数分より遠くへ動いたら止める（机で少し滑る程度では止めない）
 MAX_ROWS = 30        # 念のための上限（一覧は最大 12 人くらい）
 DIALOG_SETTLE = 2    # ダイアログが出てから一覧が埋まるまで待つ秒数
 MENU_TIMEOUT = 5     # 右クリックしてからメニューが出るまで待つ秒数
@@ -215,6 +217,11 @@ def analyze_grid(colors, first_y):
         if abs(s - (top + k * height)) > ROW_TOLERANCE:
             raise ValueError("行の高さがそろっていませんでした")
     return top, height, count
+
+
+def moved_far(before, after, row_height):
+    """マウスが before から after へ、行 MOVE_ROWS 個分より遠くへ動いたか。"""
+    return math.dist(before, after) > row_height * MOVE_ROWS
 
 
 def row_point(settings, grid_rect, index):
@@ -748,8 +755,8 @@ def auto_run(folder, dialog, grid, settings):
         if point is None:
             print("患者一覧の下端まで処理しました。")
             break
-        if last_pos is not None and cursor_pos() != last_pos:
-            print("マウスが動いたので止めました。")
+        if last_pos is not None and moved_far(last_pos, cursor_pos(), layout["row_height"]):
+            print("マウスが大きく動いたので止めました。")
             break
         if not grid_visible_at(grid, point):
             bring_to_front(dialog)

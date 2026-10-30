@@ -188,6 +188,13 @@ class SettingsTest(unittest.TestCase):
         self.assertIsNotNone(main.row_point(s, self.GRID, 13))  # y=680
         self.assertIsNone(main.row_point(s, self.GRID, 14))     # y=700（下端）
 
+    def test_moved_far(self):
+        self.assertFalse(main.moved_far((100, 100), (100, 100), 20))
+        self.assertFalse(main.moved_far((100, 100), (130, 140), 20))  # 50 px（机で滑った程度）
+        self.assertFalse(main.moved_far((100, 100), (100, 160), 20))  # ちょうど行 3 つ分
+        self.assertTrue(main.moved_far((100, 100), (100, 161), 20))
+        self.assertTrue(main.moved_far((100, 100), (40, 100), 19.5))
+
     def test_load_settings(self):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / main.SETTINGS_NAME
