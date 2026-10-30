@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>case-export マニュアル</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2328;
+    --muted: #59636e;
+    --line: #d1d9e0;
+    --soft: #f6f8fa;
+    --accent: #0b5cad;
+    --warn-bg: #fff8e5;
+    --warn-line: #d4a72c;
+    --stop-bg: #ffebe9;
+    --stop-line: #cf222e;
+    --code-bg: #eff2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16191d;
+      --fg: #e6e8eb;
+      --muted: #9aa4af;
+      --line: #343a42;
+      --soft: #1e2227;
+      --accent: #6cb6ff;
+      --warn-bg: #2b2513;
+      --warn-line: #a88a2c;
+      --stop-bg: #2d1a1b;
+      --stop-line: #e5534b;
+      --code-bg: #23282e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "Yu Gothic UI", "Meiryo UI", "Meiryo", "Hiragino Sans", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 1.9rem; margin: 0 0 4px; line-height: 1.3; }
+  .sub { color: var(--muted); margin: 0 0 28px; }
+  h2 {
+    font-size: 1.35rem;
+    margin: 48px 0 12px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--line);
+    line-height: 1.4;
+  }
+  h3 { font-size: 1.1rem; margin: 28px 0 8px; }
+  p, ul, ol { margin: 8px 0 12px; }
+  li { margin: 4px 0; }
+  a { color: var(--accent); }
+  code, kbd, .path {
+    font-family: Consolas, "BIZ UDGothic", monospace;
+    font-size: 0.92em;
+    background: var(--code-bg);
+    border-radius: 4px;
+    padding: 1px 5px;
+    overflow-wrap: anywhere;
+  }
+  kbd { border: 1px solid var(--line); border-bottom-width: 2px; }
+  pre {
+    background: var(--code-bg);
+    border-radius: 6px;
+    padding: 12px 14px;
+    overflow-x: auto;
+    line-height: 1.55;
+  }
+  pre code { background: none; padding: 0; }
+  nav.toc {
+    background: var(--soft);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 20px;
+  }
+  nav.toc ol { margin: 4px 0; padding-left: 1.4em; }
+  .note, .warn, .stop {
+    border-left: 4px solid var(--accent);
+    background: var(--soft);
+    padding: 10px 14px;
+    border-radius: 0 6px 6px 0;
+    margin: 14px 0;
+  }
+  .warn { border-color: var(--warn-line); background: var(--warn-bg); }
+  .stop { border-color: var(--stop-line); background: var(--stop-bg); }
+  .note > :first-child, .warn > :first-child, .stop > :first-child { margin-top: 0; }
+  .note > :last-child, .warn > :last-child, .stop > :last-child { margin-bottom: 0; }
+  .table-wrap { overflow-x: auto; margin: 12px 0 16px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+  th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--soft); white-space: nowrap; }
+  ol.steps { counter-reset: step; list-style: none; padding-left: 0; }
+  ol.steps > li {
+    counter-increment: step;
+    position: relative;
+    padding: 10px 14px 10px 52px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin: 10px 0;
+  }
+  ol.steps > li::before {
+    content: counter(step);
+    position: absolute;
+    left: 14px;
+    top: 10px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--bg);
+    font-weight: bold;
+    text-align: center;
+    line-height: 26px;
+    font-size: 0.9rem;
+  }
+  .screen {
+    font-family: Consolas, "BIZ UDGothic", monospace;
+    font-size: 0.88rem;
+    background: var(--code-bg);
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin: 8px 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  footer { color: var(--muted); font-size: 0.9rem; margin-top: 56px; border-top: 1px solid var(--line); padding-top: 12px; }
+  @media print {
+    body { font-size: 11pt; }
+    main { max-width: none; padding: 0; }
+    nav.toc { break-after: page; }
+    h2 { break-after: avoid; }
+    li, tr, .note, .warn, .stop { break-inside: avoid; }
+    a { color: inherit; text-decoration: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+
+<h1>case-export マニュアル</h1>
+<p class="sub">手術予定表の Excel を「症例ファイル」に連番で保存する作業を自動化するツール（v0.1.0）</p>
+
+<nav class="toc">
+  <strong>目次</strong>
+  <ol>
+    <li><a href="#overview">概要</a></li>
+    <li><a href="#prepare">使う前の準備</a></li>
+    <li><a href="#usage">使い方（院内端末）</a></li>
+    <li><a href="#inside">自動処理でしていること</a></li>
+    <li><a href="#check">終わったあとの確認</a></li>
+    <li><a href="#semi">半自動モード</a></li>
+    <li><a href="#trouble">止まったとき・困ったとき</a></li>
+    <li><a href="#dev">開発・持ち込み</a></li>
+    <li><a href="#caution">注意事項</a></li>
+  </ol>
+</nav>
+
+<!-- ===================================================== -->
+<h2 id="overview">1. 概要</h2>
+
+<p>電子カルテの「手術予定表発行」から患者ごとの Excel を開き、
+<span class="path">デスクトップ\症例ファイル</span> に <code>001.xls</code>、<code>002.xls</code>…と連番で保存します。
+保存した Excel は、麻酔記録システム AIMS-ν の患者情報タブ「Excel ファイルから読み込む」で使います。</p>
+
+<h3>自動になる作業</h3>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>もとの手作業</th><th>case-export を使うと</th></tr></thead>
+  <tbody>
+    <tr><td>① 電子カルテの「手術依頼箋出力」ボタンを押す</td><td><strong>手で行う</strong>（手術予定表発行ダイアログを開くところまで）</td></tr>
+    <tr><td>② 患者一覧で患者を右クリック →「発行プレビュー」</td><td>自動</td></tr>
+    <tr><td>③ その患者の Excel が開く</td><td>自動（電子カルテが書き込み終えるのを待つ）</td></tr>
+    <tr><td>④ 名前を付けて保存 → <span class="path">デスクトップ\症例ファイル</span></td><td>自動（<code>NNN.xls</code> の連番で保存し、Excel を閉じる）</td></tr>
+    <tr><td>⑤ 全患者分繰り返す</td><td>自動（一覧の人数を画面から読み取り、その人数分だけ処理する）</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>保存しない患者</h3>
+<p>麻酔の欄がちょうど「<strong>局所麻酔</strong>」の患者は保存せずに閉じ、番号を詰めます。
+「局所麻酔」にほかの文字が付いているもの（例：「局所麻酔　鎮静」など）は保存します。</p>
+
+<div class="note">
+<p>画面に出るのは、保存したファイル名・件数と止まった理由だけです。患者名などの患者情報は表示しません。</p>
+</div>
+
+<!-- ===================================================== -->
+<h2 id="prepare">2. 使う前の準備</h2>
+
+<ul>
+  <li><strong>使う端末</strong>：電子カルテ（手術予定表発行）と Excel が入った院内の Windows 端末。</li>
+  <li><strong>プログラム</strong>：<code>main.dist</code> フォルダを、フォルダごと端末の好きな場所（例：デスクトップ）に置きます。中の <code>main.exe</code> を起動します。インストールやネット接続は要りません。
+    <ul><li>フォルダの中のファイルを <code>main.exe</code> だけ取り出して動かすことはできません。フォルダのまま使ってください。</li></ul>
+  </li>
+  <li><strong>保存先</strong>：<span class="path">デスクトップ\症例ファイル</span>。なければ自動で作ります（デスクトップを OneDrive に移している端末でも、Windows が示すデスクトップに作ります）。</li>
+  <li><strong>設定ファイル</strong>：<code>main.exe</code> と同じフォルダに <code>settings.json</code> ができます（患者一覧の 1 行目の位置）。フォルダに書き込めない場所に置くと、毎回測り直すことになります。</li>
+</ul>
+
+<div class="warn">
+<p>始める前に、<span class="path">症例ファイル</span> の中の <code>001.xls</code> などを Excel で開いていないことを確かめてください。開いていると前回のファイルを削除できず、そこで終わります。</p>
+</div>
+
+<!-- ===================================================== -->
+<h2 id="usage">3. 使い方（院内端末）</h2>
+
+<ol class="steps">
+  <li>
+    <strong>電子カルテを開き、<code>main.exe</code> をダブルクリックで起動します。</strong>
+    <div class="screen">保存先: C:\Users\…\Desktop\症例ファイル</div>
+  </li>
+  <li>
+    <strong>前回のファイルを削除します。</strong><br>
+    <span class="path">症例ファイル</span> に前回の <code>NNN.xls</code>（数字 3 桁の .xls）が残っていると、件数を表示して確認を求めます。<kbd>Enter</kbd> で削除して先へ進みます。やめるときは <kbd>Ctrl</kbd>+<kbd>C</kbd>。
+    <div class="screen">前回のファイルが 12 件あります（001.xls ～ 012.xls）。
+Enter で削除して開始します（やめるときは Ctrl+C）:</div>
+    消すのは <code>001.xls</code> のような「数字 3 桁 + .xls」のファイルだけです。ほかの名前のファイルは消しません。
+  </li>
+  <li>
+    <strong>手術予定表発行ダイアログを手で開きます。</strong><br>
+    電子カルテの「手術依頼箋出力」ボタンを押します。起動前に開いておいてもかまいません。開くと自動で先へ進みます。
+    <div class="screen">手術予定表発行ダイアログを開いてください（開くと先に進みます。やめるときは Ctrl+C）…</div>
+    患者一覧にその週の患者が並んでいることを確かめてください。
+  </li>
+  <li>
+    <strong>（初回だけ）患者一覧の 1 行目の位置を測ります。</strong><br>
+    1 行目の患者の<strong>名前か日付の上にマウスを置き</strong>（クリックはしない）、この黒い画面をクリックせずに <kbd>Enter</kbd> を押します。行を数える必要はありません。
+    <div class="screen">1 行目の患者の名前か日付の上にマウスを置いて Enter（チェックボックスは避けてください）:</div>
+    <ul>
+      <li>チェックボックスの上は避けてください。</li>
+      <li>この黒い画面が患者一覧に重なっているときは、ずらしてから測ってください。</li>
+      <li>測った位置は <code>settings.json</code> に記録され、次回からはこの手順はありません。表示の拡大率（125%・150% など）を変えたときは、自動で測り直しを求めます。</li>
+    </ul>
+  </li>
+  <li>
+    <strong><kbd>Enter</kbd> で自動処理を始めます。</strong>
+    <div class="screen">Enter で自動処理を始めます。終わるまでマウスとキーボードに触らないでください:</div>
+    <div class="stop"><p><strong>終わるまでマウスとキーボードに触らないでください。</strong>マウスを大きく（行 3 つ分より遠くへ）動かすと止まります。机の上で少し滑る程度では止まりません。</p></div>
+    処理中は次のように表示されます（例）。
+    <div class="screen">患者一覧: 12 人分の行を見つけました。
+001.xls を保存しました（1 件目）
+002.xls を保存しました（2 件目）
+局所麻酔なので保存せずに閉じました（除外 1 件目）
+003.xls を保存しました（3 件目）
+…
+一覧の最後まで（12 人分）処理しました。
+
+終了しました。保存 11 件、局所麻酔で除外 1 件（合計が一覧の人数と合っているか確かめてください）</div>
+  </li>
+  <li>
+    <strong>結果を確かめて閉じます。</strong><br>
+    <a href="#check">5. 終わったあとの確認</a>をしてから、<strong>この黒い画面をクリックしてから</strong> <kbd>Enter</kbd> で閉じます（<kbd>Enter</kbd> が電子カルテのダイアログに入らないようにするため）。
+    <div class="screen">この画面をクリックしてから Enter キーで閉じます。</div>
+  </li>
+</ol>
+
+<!-- ===================================================== -->
+<h2 id="inside">4. 自動処理でしていること</h2>
+
+<ol>
+  <li><strong>人数を読み取る</strong>：患者一覧の 1 行目を左クリックで選び（手で選んだときと同じく青くなります）、一覧の画面の色から、行の区切り線で<strong>行の高さ</strong>を、最後の患者の下にあるダークグレーの空きまでの行数で<strong>人数</strong>を求めます。画面の色はメモリ上で読むだけで、画像は保存しません。</li>
+  <li><strong>1 人ずつ処理する</strong>：1 行目から順に、行を右クリック → メニューの「発行プレビュー」を選びます。</li>
+  <li><strong>書き込みを待つ</strong>：開いた Excel（電子カルテの手術依頼箋のブック）に、電子カルテが値を書き込み終えるまで待ちます（データシートの内容が何回か続けて変わらなくなったら完了とみなします）。</li>
+  <li><strong>保存する</strong>：<span class="path">症例ファイル\NNN.xls</span> に保存（コピーを保存）し、ブックを保存せずに閉じます。ほかにブックがなければ Excel も終了します。</li>
+  <li><strong>局所麻酔を除く</strong>：麻酔の欄がちょうど「局所麻酔」なら保存せずに閉じ、番号を使いません（次の患者が同じ番号になります）。</li>
+  <li><strong>念のための確認</strong>：直前に開いた患者と同じ内容の Excel が開いたら、保存せずに閉じて止まります。</li>
+</ol>
+
+<div class="note">
+<p>case-export が触るのは、電子カルテが開いた手術依頼箋のブックだけです。ほかに開いている Excel のブックには触りません。</p>
+</div>
+
+<!-- ===================================================== -->
+<h2 id="check">5. 終わったあとの確認</h2>
+
+<ul>
+  <li><strong>件数</strong>：最後に出る「保存 ○ 件、局所麻酔で除外 ○ 件」の合計が、患者一覧の人数と合っているか。</li>
+  <li><strong>順番</strong>：<span class="path">症例ファイル</span> のファイルが、一覧の順（局所麻酔の患者を除く）になっているか。</li>
+  <li><strong>途中で止まったとき</strong>：止まった行より後の患者は保存されていません。<a href="#trouble">7. 止まったとき・困ったとき</a>を見て、残りを手で保存するか、もう一度実行してください（もう一度実行すると、前回のファイルを削除して 1 行目からやり直します）。</li>
+  <li><strong>「※ ○○.xls と内容が同じです」が出たとき</strong>：同じ患者を 2 回開いていないか確かめてください。</li>
+</ul>
+
+<!-- ===================================================== -->
+<h2 id="semi">6. 半自動モード</h2>
+
+<p>次のときは、自動で右クリックするのをやめて<strong>半自動</strong>に切り替わります。</p>
+<ul>
+  <li>手術予定表発行ダイアログに患者一覧が見つからないとき</li>
+  <li>患者一覧の画面の色から行の高さや人数を読み取れなかったとき（読み取った色の帯の一覧が表示されます）</li>
+</ul>
+
+<div class="screen">見張っています。電子カルテで患者を右クリック →「発行プレビュー」してください。
+終わったら Ctrl+C で終了します。</div>
+
+<p>半自動では、<strong>右クリック →「発行プレビュー」を手で</strong>行います。Excel が開くと、case-export が書き込み完了を待って保存し、Excel を閉じます（局所麻酔の除外も同じように行います）。</p>
+<ol>
+  <li>1 人目を右クリック →「発行プレビュー」。</li>
+  <li>「001.xls を保存しました」と出て Excel が閉じたら、次の患者を同じように開きます。</li>
+  <li>全員分終わったら、黒い画面で <kbd>Ctrl</kbd>+<kbd>C</kbd> を押して終了します。件数が表示されます。</li>
+</ol>
+
+<!-- ===================================================== -->
+<h2 id="trouble">7. 止まったとき・困ったとき</h2>
+
+<p>止まったときは、黒い画面に理由が出ます。「○ 行目」は患者一覧の上から数えた行です。その行より前の患者は保存済みです。</p>
+
+<h3>自動処理が止まったとき</h3>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>表示</th><th>原因</th><th>対処</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>マウスが大きく動いたので止めました。</td>
+      <td>処理中にマウスを行 3 つ分より遠くへ動かした。</td>
+      <td>もう一度実行してやり直します（前回のファイルは削除されます）。処理中はマウスに触らないでください。</td>
+    </tr>
+    <tr>
+      <td>※ ○ 行目が別の画面に隠れているので止めました。</td>
+      <td>患者一覧の上に別の画面（黒い画面・通知など）が重なっている。</td>
+      <td>重なっている画面をずらしてから、もう一度実行します。</td>
+    </tr>
+    <tr>
+      <td>※ ○ 行目で「発行プレビュー」のメニューが出なかったので止めました。</td>
+      <td>右クリックしても「発行プレビュー」のメニューが出なかった。行の位置がずれている、電子カルテが応答していない、など。</td>
+      <td>電子カルテの画面を確かめてから、もう一度実行します。何度も出るときは <code>settings.json</code> を削除して測り直します。</td>
+    </tr>
+    <tr>
+      <td>※ ○ 行目で、60 秒たっても Excel を保存できなかったので止めました。</td>
+      <td>Excel が開かない、または開いたが書き込みが終わらない・保存できない。</td>
+      <td>開いている Excel があれば手で閉じ、もう一度実行します（または残りを手で保存します）。</td>
+    </tr>
+    <tr>
+      <td>※ ○ 行目で直前と同じ患者が開いたので、保存せずに閉じて止めました。</td>
+      <td>人数を多く読み取り、一覧の下の空いた行を右クリックした（最後の患者がもう一度開く）。または、一覧に同じ患者が続けて 2 回並んでいる。</td>
+      <td>件数の合計が一覧の人数と合っていれば、全員分保存できています。同じ患者が 2 回並んでいるときは、2 回目以降を手で保存します。</td>
+    </tr>
+    <tr>
+      <td>※ ○ 行目で止めました。</td>
+      <td>その患者の保存に失敗した（理由は直前に表示）。</td>
+      <td>直前の表示を見て、その患者以降を手で保存するか、もう一度実行します。</td>
+    </tr>
+    <tr>
+      <td>患者一覧の下端まで処理しました。</td>
+      <td>一覧の見えている範囲の一番下まで処理した。</td>
+      <td>件数の合計が一覧の人数と合っているか確かめます。足りなければ、残りを手で保存します。</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h3>保存・Excel のとき</h3>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>表示</th><th>原因</th><th>対処</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>※ ○○.xls の保存に失敗しました（…）。この患者は手で保存してください。</td>
+      <td>保存先に書き込めなかった（同じ名前のファイルを開いている、容量が足りない、など）。</td>
+      <td>その患者を手で「名前を付けて保存」します。</td>
+    </tr>
+    <tr>
+      <td>※ 開いた Excel を読み取れなかったので飛ばしました。この患者は手で保存してください。</td>
+      <td>開いた Excel から内容を読めなかった。</td>
+      <td>その Excel を手で保存して閉じます。</td>
+    </tr>
+    <tr>
+      <td>※ Excel に接続できません（…）。保存されなければ、この患者は手で保存してください。</td>
+      <td>Excel の起動に時間がかかっている、または Excel とつながらない。</td>
+      <td>少し待っても保存されなければ、手で保存します。</td>
+    </tr>
+    <tr>
+      <td>※ ブックを閉じられませんでした。／※ Excel を終了できませんでした。手で閉じてください。</td>
+      <td>保存はできたが、Excel を閉じられなかった。</td>
+      <td>Excel を手で閉じます（保存は不要です）。</td>
+    </tr>
+    <tr>
+      <td>※ ○○.xls と内容が同じです。同じ患者を 2 回開いていないか確認してください。</td>
+      <td>前に保存したファイルと同じ内容を保存した。</td>
+      <td>同じ患者が重複していれば、片方を削除します。</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h3>起動・準備のとき</h3>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>表示</th><th>原因</th><th>対処</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>前回のファイルを削除できませんでした（…）。開いていないか確認してください。</td>
+      <td>前回の <code>NNN.xls</code> を Excel などで開いている。</td>
+      <td>そのファイルを閉じてから、もう一度起動します。</td>
+    </tr>
+    <tr>
+      <td>※ マウスが患者一覧の外にありました。もう一度測ります。</td>
+      <td>1 行目の位置を測るとき、マウスが患者一覧の外にあった。</td>
+      <td>1 行目の患者の名前か日付の上にマウスを置き直して <kbd>Enter</kbd>。</td>
+    </tr>
+    <tr>
+      <td>表示の拡大率が前回測ったときと違うので、測り直します。</td>
+      <td>Windows の表示の拡大率が変わった。</td>
+      <td>画面の案内に従って 1 行目の位置を測り直します。</td>
+    </tr>
+    <tr>
+      <td>settings.json が古い形式か壊れているので、測り直します。</td>
+      <td>古い版で作った設定ファイル、または中身が壊れている。</td>
+      <td>画面の案内に従って測り直します。</td>
+    </tr>
+    <tr>
+      <td>※ 1 行目の位置を記録できませんでした（…）。次回も測ります。</td>
+      <td><code>main.exe</code> のフォルダに書き込めない。</td>
+      <td>そのままでも使えます。毎回測りたくなければ、書き込める場所（デスクトップなど）にフォルダごと移します。</td>
+    </tr>
+    <tr>
+      <td>※ 手術予定表発行ダイアログの患者一覧が見つかりませんでした。半自動に切り替えます。</td>
+      <td>ダイアログの作りが想定と違う。</td>
+      <td><a href="#semi">半自動モード</a>で手で発行プレビューします。</td>
+    </tr>
+    <tr>
+      <td>※ 患者一覧を読み取れませんでした（…）。<br>半自動に切り替えます。</td>
+      <td>一覧の色から行の高さや人数を読み取れなかった（一覧が空、画面の色が想定と違う、など）。</td>
+      <td><a href="#semi">半自動モード</a>で続けます。続くときは、表示された色の帯の一覧を開発担当に伝えてください（患者情報は含みません）。</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h3>そのほか</h3>
+<ul>
+  <li><strong>違う行を右クリックするようになった</strong>：<code>main.exe</code> と同じフォルダの <code>settings.json</code> を削除し、次の起動で 1 行目の位置を測り直します。</li>
+  <li><strong>途中でやめたい</strong>：黒い画面をクリックして <kbd>Ctrl</kbd>+<kbd>C</kbd>。「中止しました。」と出ます。開いたままの Excel があれば手で閉じてください。</li>
+  <li><strong>エラーの英語の長い表示が出て終わった</strong>：表示を開発担当に伝えてください（患者名が含まれていないか確かめてから）。</li>
+</ul>
+
+<!-- ===================================================== -->
+<h2 id="dev">8. 開発・持ち込み</h2>
+
+<h3>ファイル構成</h3>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>ファイル</th><th>中身</th></tr></thead>
+  <tbody>
+    <tr><td><code>main.py</code></td><td>本体（自動処理と半自動）。exe にすると <code>main.exe</code>。</td></tr>
+    <tr><td><code>inspect_ui.py</code></td><td>実機の画面の作りを調べるツール（読み取りのみ）。exe にすると <code>inspect_ui.exe</code>。</td></tr>
+    <tr><td><code>build.bat</code></td><td>Windows 用のビルドスクリプト。</td></tr>
+    <tr><td><code>tests/</code></td><td>Windows なしで確かめられる部分のテスト。</td></tr>
+    <tr><td><code>pyproject.toml</code></td><td>uv のプロジェクト定義（依存は pywin32・pywinauto）。</td></tr>
+    <tr><td><code>changelog.md</code></td><td>変更履歴。</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>ビルド（ネットにつながった Windows PC）</h3>
+<p>院内端末には exe（standalone のフォルダ）しか持ち込めないので、ビルドは別の Windows PC で行います。</p>
+<ol>
+  <li><a href="https://docs.astral.sh/uv/">uv</a> を入れておきます（Python 3.10 は uv が用意します）。</li>
+  <li>リポジトリを pull して最新にします。</li>
+  <li><code>build.bat</code> を実行します。
+<pre><code>build.bat              （ダブルクリックでも可。main をビルド）
+build.bat inspect_ui   （調査ツールをビルド）</code></pre>
+  </li>
+  <li>終わると <code>dist\main.dist\main.exe</code>（または <code>dist\inspect_ui.dist\inspect_ui.exe</code>）ができます。</li>
+</ol>
+<ul>
+  <li>初回のビルドは 10 分以上かかることがあります。</li>
+  <li><code>build.bat</code> はビルド用の <code>.venv-build</code> を作り、Nuitka・pywinauto・pywin32・comtypes を決まった版で入れます。<code>.venv</code> や <code>pyproject.toml</code> は変えません。</li>
+  <li><strong>onefile（exe 1 個）にはしません。</strong>ウイルス対策ソフトに引っかかるためです。</li>
+</ul>
+
+<h3>持ち込み</h3>
+<ul>
+  <li><code>dist\main.dist</code> フォルダを<strong>フォルダごと</strong>院内端末にコピーします。中の <code>main.exe</code> を起動します。</li>
+  <li>新しい版に入れ替えるとき、前の版のフォルダにある <code>settings.json</code> を新しいフォルダに移すと、1 行目の測り直しを省けます（拡大率が同じ場合）。</li>
+</ul>
+
+<h3><code>settings.json</code></h3>
+<p>患者一覧の 1 行目の位置を記録したファイルです。患者情報は含みません。</p>
+<pre><code>{
+  "version": 2,
+  "dpi": 96,
+  "x": 120,
+  "y": 30
+}</code></pre>
+<ul>
+  <li><code>dpi</code>：測ったときの表示の拡大率（96 = 100%）。違っていれば測り直します。</li>
+  <li><code>x</code>・<code>y</code>：患者一覧の左上から見た 1 行目の位置（画面の点）。</li>
+  <li>削除すると次の起動で測り直します。</li>
+</ul>
+
+<h3>画面調査ツール <code>inspect_ui.exe</code></h3>
+<p>電子カルテや Excel の画面の作り（部品の種類や名前）を調べ、患者情報を伏せたレポートに書き出します。クリックやキー入力は一切しません。電子カルテの更新で動かなくなったときの調査に使います。</p>
+<ol>
+  <li><code>inspect_ui.exe</code> を起動すると 10 秒数えます。その間に調べたい画面を前面に出します（クリックして前に出す）。</li>
+  <li>次の場面で 1 回ずつ実行します。
+    <ol>
+      <li>「手術依頼箋出力」ボタンが見えている電子カルテの画面</li>
+      <li>手術予定表発行ダイアログ</li>
+      <li>患者を右クリックしてメニューを開いたところ</li>
+      <li>発行プレビューで Excel が開いたところ</li>
+      <li>その Excel を手で閉じたあと</li>
+    </ol>
+  </li>
+  <li>今のフォルダに <code>inspect_report_&lt;日時&gt;.txt</code> ができます。</li>
+</ol>
+<p>コマンドプロンプトからは次のオプションが使えます。</p>
+<pre><code>inspect_ui.exe --delay 20      待ち時間を 20 秒にする
+inspect_ui.exe --allow 発行    伏せ字にしない文字列を足す（複数可）
+inspect_ui.exe --out D:\work   レポートを書き出すフォルダ</code></pre>
+<div class="warn">
+<p>ボタン・メニュー・列見出し以外の文字（タイトル・一覧の行・入力欄など）は文字数だけにして伏せますが、レポートを共有する前に、患者名などが含まれていないか必ず中身を確かめてください。</p>
+</div>
+
+<h3>テスト（開発環境）</h3>
+<p>電子カルテや Excel を使わない部分（ファイル名の連番、局所麻酔の判定、一覧の色の読み取り、設定ファイルなど）は、Windows がなくてもテストできます。<code>uv run</code> は使わず、インタプリタを直接呼びます。</p>
+<pre><code>.venv/bin/python -m unittest discover -s tests</code></pre>
+<p>電子カルテ・Excel の画面操作にかかわる部分は、院内端末でしか確かめられません。</p>
+
+<h3>技術的な仕組み（参考）</h3>
+<ul>
+  <li>電子カルテの患者一覧（<code>AfxOleControl42</code>）は中の行を部品として取れないので、座標で右クリックします。右クリックで出たメニューは UI Automation で「発行プレビュー」を選びます。</li>
+  <li>Excel は COM で、電子カルテが開いたブック（<span class="path">C:\SSI\Excel\手術\手術依頼箋.xls</span>）を見つけ、<code>SaveCopyAs</code> で保存します。麻酔の欄はデータシートの <code>B14</code>・<code>C14</code> を見ます。</li>
+  <li>COM はメインの処理で STA（<code>sys.coinit_flags = 2</code>）として最初に初期化し、別スレッドでは使いません。</li>
+  <li>nuitka の exe では、pywinauto を読み込む前に <code>sys.frozen = True</code> にしています（comtypes の <code>ImportError: Typelib different than module</code> を避けるため）。</li>
+</ul>
+
+<!-- ===================================================== -->
+<h2 id="caution">9. 注意事項</h2>
+<ul>
+  <li>自動処理の間は、マウスとキーボードに触らないでください。</li>
+  <li>処理が終わったら、黒い画面をクリックしてから <kbd>Enter</kbd> で閉じてください。</li>
+  <li>保存した件数と除外した件数の合計が一覧の人数と合っているか、ファイルが一覧の順になっているかを必ず確かめてください。</li>
+  <li>同じ患者が一覧の中で続けて 2 回並んでいると、2 回目で止まります。</li>
+  <li>実際の患者の Excel ファイルや、電子カルテの画面キャプチャをリポジトリや院外に持ち出さないでください。</li>
+  <li>問い合わせやレポートの共有では、患者名などの患者情報を含めないでください。</li>
+</ul>
+
+<footer>case-export v0.1.0 マニュアル</footer>
+
+</main>
+</body>
+</html>
