@@ -268,6 +268,12 @@ class AnalyzeGridTest(unittest.TestCase):
         self.assertIsNone(main.row_colors(pixels)[top + 8])
         self.assertEqual(self.analyze(pixels, top + 8), (top, 20.0, 3))
 
+    def test_many_patients(self):
+        # ダイアログを縦に広げて 38 人を並べた一覧（院内端末と同じ 14px の行 + 1px の区切り線）
+        pixels, top = grid_pixels([BLUE] + [WHITE] * 37, row_height=15, dark=57,
+                                  dark_color=(128, 128, 128), hscroll=15)
+        self.assertEqual(self.analyze(pixels, top + 7), (top, 15.0, 38))
+
     def test_no_dark_area(self):
         pixels, top = grid_pixels([BLUE, WHITE, WHITE], dark=0)
         with self.assertRaises(ValueError):
